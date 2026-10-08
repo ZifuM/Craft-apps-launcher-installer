@@ -1,0 +1,2 @@
+ba2ccee23271ea18fd276e3abc895bcb7c063ba46dea0a80c7c22aeaf913143b  ArtCraftLauncher-Setup.exe
+26941bd9d79418bc91e91aae3e95d232158874572873af34cb0fe6c7728132a3  ArtCraftLauncher-Source.zip
