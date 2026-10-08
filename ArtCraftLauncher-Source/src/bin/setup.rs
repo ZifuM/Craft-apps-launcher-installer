@@ -7,11 +7,11 @@ const ICON: &[u8] = include_bytes!("../../assets/artcraft-icon.ico");
 
 fn main() {
     if let Err(error) = install() {
-        let message = format!("ArtCraft Launcher could not be installed.\n\n{error}");
+        let message = format!("ArtCraft Master Suite could not be installed.\n\n{error}");
         #[cfg(target_os = "windows")]
         unsafe {
             use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
-            let title: Vec<u16> = "ArtCraft Launcher Setup\0".encode_utf16().collect();
+            let title: Vec<u16> = "ArtCraft Master Suite Setup\0".encode_utf16().collect();
             let text: Vec<u16> = format!("{message}\0").encode_utf16().collect();
             MessageBoxW(
                 std::ptr::null_mut(),
@@ -68,13 +68,13 @@ fn install() -> Result<(), Box<dyn std::error::Error>> {
         .join("Windows")
         .join("Start Menu")
         .join("Programs")
-        .join("ArtCraft Launcher.lnk");
+        .join("ArtCraft Master Suite.lnk");
         let quoted_start_menu = start_menu.to_string_lossy().replace('\'', "''");
         let uninstall = format!(
-            "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command Remove-Item -LiteralPath '{quoted_folder}' -Recurse -Force; Remove-Item -LiteralPath '{quoted_start_menu}' -Force -ErrorAction SilentlyContinue; $d=[Environment]::GetFolderPath(''Desktop''); Remove-Item -LiteralPath (Join-Path $d 'ArtCraft Launcher.lnk') -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ArtCraftLauncher' -Force"
+            "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command Remove-Item -LiteralPath '{quoted_folder}' -Recurse -Force; Remove-Item -LiteralPath '{quoted_start_menu}' -Force -ErrorAction SilentlyContinue; $d=[Environment]::GetFolderPath(''Desktop''); Remove-Item -LiteralPath (Join-Path $d 'ArtCraft Master Suite.lnk') -Force -ErrorAction SilentlyContinue; Remove-Item -LiteralPath 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ArtCraftLauncher' -Force"
         ).replace('\'', "''");
         let script = format!(
-            "$shell = New-Object -ComObject WScript.Shell; $start = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\ArtCraft Launcher.lnk'; $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ArtCraft Launcher.lnk'; foreach ($shortcutPath in @($start, $desktop)) {{ $s = $shell.CreateShortcut($shortcutPath); $s.TargetPath = '{quoted_exe}'; $s.WorkingDirectory = Split-Path '{quoted_exe}'; $s.IconLocation = '{quoted_icon},0'; $s.Save() }}; $pinned = Join-Path $env:APPDATA 'Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar'; if (Test-Path $pinned) {{ Get-ChildItem -LiteralPath $pinned -Filter '*.lnk' | ForEach-Object {{ $s = $shell.CreateShortcut($_.FullName); if ($s.TargetPath -ieq '{quoted_exe}') {{ $s.IconLocation = '{quoted_icon},0'; $s.Save() }} }} }}; $key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ArtCraftLauncher'; New-Item $key -Force | Out-Null; Set-ItemProperty $key DisplayName 'ArtCraft Launcher'; Set-ItemProperty $key DisplayVersion '0.1.0'; Set-ItemProperty $key Publisher 'ArtCraft Launcher'; Set-ItemProperty $key DisplayIcon '{quoted_icon}'; Set-ItemProperty $key InstallLocation '{quoted_folder}'; $uninstall = '{uninstall}'; Set-ItemProperty $key UninstallString $uninstall"
+            "$shell = New-Object -ComObject WScript.Shell; $start = Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\ArtCraft Master Suite.lnk'; $desktop = Join-Path ([Environment]::GetFolderPath('Desktop')) 'ArtCraft Master Suite.lnk'; foreach ($shortcutPath in @($start, $desktop)) {{ $s = $shell.CreateShortcut($shortcutPath); $s.TargetPath = '{quoted_exe}'; $s.WorkingDirectory = Split-Path '{quoted_exe}'; $s.IconLocation = '{quoted_icon},0'; $s.Save() }}; foreach ($legacy in @((Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs\\ArtCraft Launcher.lnk'), (Join-Path ([Environment]::GetFolderPath('Desktop')) 'ArtCraft Launcher.lnk'))) {{ if (Test-Path -LiteralPath $legacy) {{ $old = $shell.CreateShortcut($legacy); if ($old.TargetPath -ieq '{quoted_exe}') {{ Remove-Item -LiteralPath $legacy -Force }} }} }}; $pinned = Join-Path $env:APPDATA 'Microsoft\\Internet Explorer\\Quick Launch\\User Pinned\\TaskBar'; if (Test-Path $pinned) {{ Get-ChildItem -LiteralPath $pinned -Filter '*.lnk' | ForEach-Object {{ $s = $shell.CreateShortcut($_.FullName); if ($s.TargetPath -ieq '{quoted_exe}') {{ $s.IconLocation = '{quoted_icon},0'; $s.Save() }} }} }}; $key = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ArtCraftLauncher'; New-Item $key -Force | Out-Null; Set-ItemProperty $key DisplayName 'ArtCraft Master Suite'; Set-ItemProperty $key DisplayVersion '0.1.0'; Set-ItemProperty $key Publisher 'ArtCraft Master Suite'; Set-ItemProperty $key DisplayIcon '{quoted_icon}'; Set-ItemProperty $key InstallLocation '{quoted_folder}'; $uninstall = '{uninstall}'; Set-ItemProperty $key UninstallString $uninstall"
         );
         let status = Command::new("powershell.exe")
             .args([

@@ -1,26 +1,73 @@
-# ArtCraft Launcher
+# ArtCraft Master Suite
 
-A native Windows desktop launcher for the seven Storytold Crafting Apps. It uses egui/eframe, installs official 64-bit portable releases from GitHub, and scans only project folders selected by the user.
+A native Windows home for Storytold’s open-source creative and office apps. Install and update the apps, keep local projects together, and open each project with the app that supports it.
 
-## Build
+> ArtCraft Master Suite is an independent community project. It is not affiliated with Adobe Inc. Adobe and other product names and marks belong to their respective owners.
 
-Install the stable Rust toolchain and Visual Studio Build Tools for the MSVC target. From this directory:
+## Features
 
-1. `cargo build --release --bin artcraft-launcher`
-2. `cargo build --release --bin artcraft-setup`
+- **Install and manage apps:** Find releases, install or update apps, open them, or uninstall them from one place.
+- **Browse projects together:** Scan folders you choose and filter projects by app. Switch between List, Grid, and Waterfall views.
+- **See project details:** View file type, size, modified date, location, and a canvas preview when the file contains preview data the launcher can read.
+- **Keep app folders organized:** Add a project folder and the launcher creates a subfolder for each app. The selected default folder is also used as the app’s working directory when launching, where supported.
+- **Find work quickly:** Rename projects while keeping their file extension, open them in their associated app, or delete them with confirmation.
+- **Get update notices:** The launcher checks for app updates when it starts and every four hours while open. You can also check an app manually. Project folders are rescanned every three minutes.
+- **Use a local desktop app:** The launcher and project index run on your PC. It only scans folders you choose.
 
-Build the launcher first; the setup executable embeds it. The resulting installer is `target/release/artcraft-setup.exe`.
+## Apps
 
-## Release and project formats
+| App | Purpose | Recognized project and media formats |
+| --- | --- | --- |
+| PhotoCraft | Image editing | `.pcraft`, `.psd`, `.psb`, `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.webp` |
+| VectorCraft | Vector illustration | `.vectorcraft`, `.svg`, `.eps`, `.ai` |
+| FilmCraft | Video editing | `.fcproj`, `.otio`, `.edl`, `.aaf` |
+| LightCraft | Photo library and RAW development | `.dng`, `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef` |
+| PdfCraft | PDF workbench | `.pdf` |
+| EffectCraft | Motion and visual effects | `.ecproj`, `.lottie` |
+| DesignCraft | Page layout | `.designcraft`, `.dcbook`, `.idml` |
+| SoundCraft | Audio workstation | `.wav`, `.aiff`, `.aif`, `.flac` |
+| CADCraft | CAD and drafting | `.dxf`, `.dwg` |
+| GridCraft | Spreadsheets | `.xlsx`, `.csv`, `.tsv` |
+| WordCraft | Word processing | `.docx`, `.odt`, `.rtf`, `.html`, `.md`, `.txt` |
+| DeckCraft | Presentations | `.deckcraft`, `.pptx` |
 
-Release versions are resolved from GitHub's public release page, with its Atom feed as a fallback; release metadata does not depend on the rate-limited GitHub API. Windows packages and `SHA256SUMS.txt` are fetched from the release and verified before extraction. App logos are loaded from the matching ArtCraft website app pages. The supplied ArtCraft SVG mark is embedded in the launcher UI, window/taskbar icon, installer, Start menu shortcut, and Windows Installed apps entry. Network failures leave the launcher usable and show a clear release-check or download error.
+The App Manager separates **Creative Apps** and **Productivity Apps**. SoundCraft is listed under Creative Apps, but it does not yet have an official Windows release to install.
 
-The local project index recognizes `.pcraft`, `.psd`, `.psb`; `.vectorcraft`, `.svg`, `.eps`, `.ai`; `.fcproj`, `.otio`, `.edl`, `.aaf`; camera RAW files; `.pdf`; `.ecproj`, `.lottie`; and `.designcraft`, `.dcbook`, `.idml`. Projects in the launcher can be renamed (their extension stays intact) or deleted with confirmation; common project actions use compact icons with tooltips. The Projects page offers saved List, Grid, and Waterfall views. Cards show file type, size, modified date, and folder; image formats (including TIFF), PSD/PSB embedded composites, and compatible PhotoCraft bundle previews are shown when available. Other formats use the app logo when an actual canvas preview is unavailable. The repository for website-branded PdfCraft and its executable are named `printcraft`. When a project folder is added, the launcher creates an app-named subfolder for every app and automatically scans the chosen folder and all its subfolders. The selected default project root is the working directory for each app, using that app's subfolder. This is a best-effort default for Save dialogs; apps that remember their own location can override it.
+The launcher matches files by extension. A preview is shown when it can be extracted from the file; formats without readable preview data use the app’s logo instead. Recognizing an Adobe-compatible file extension does not guarantee that every feature of that format is supported by the app.
 
-## Notes
+## Install
 
-The launcher is installed per user to `%LOCALAPPDATA%\Programs\ArtCraft Launcher`. Setup installs the supplied ArtCraft `.ico` next to the executable, points the Start menu and desktop shortcuts directly at it, and embeds the mark in the executable for the running window and taskbar. App releases are installed separately to `%LOCALAPPDATA%\Programs\ArtCraft Apps`. Launcher preferences are stored in `%LOCALAPPDATA%\ArtCraftLauncher`; project files remain in their existing folders. This independent launcher is not affiliated with Adobe Inc. Product and company marks belong to their respective owners.
+Download the Windows setup executable from the project’s **Releases** page and run it. Setup installs the launcher for the current Windows user and adds Start menu and desktop shortcuts.
 
-Each app in the sidebar opens its own detail page with install/update/open/remove controls, recent matching projects, supported file types, and links to the app source and website. Installed app cards in the All Apps page also include a red uninstall control with a confirmation step. App cards and detail pages use a subtle version of each app logo's background color. Launching an app shows a short branded splash before opening it. Navigation icons are drawn by the UI so they do not depend on symbol-font coverage.
+The launcher downloads official Windows app releases from the [Storytold GitHub organization](https://github.com/storytold). A network connection is needed to discover releases, install apps, and check for updates. If a release check or download fails, the launcher reports the problem; installed apps and local projects remain on the device.
 
-While the launcher is open, it checks app releases at startup and every four hours. A toast summarizes installed apps with available updates. Watched project folders are rescanned every three minutes.
+## Build from source
+
+### Requirements
+
+- Windows
+- The stable Rust toolchain, including the MSVC target
+- Visual Studio Build Tools with the C++ build tools for MSVC
+
+From the repository directory, build the launcher first, then the setup program:
+
+```powershell
+cargo build --release --bin artcraft-launcher
+cargo build --release --bin artcraft-setup
+```
+
+The setup executable is written to `target/release/artcraft-setup.exe`. It embeds the launcher executable, so rebuild the launcher before rebuilding setup.
+
+## Local data
+
+- Launcher: `%LOCALAPPDATA%\Programs\ArtCraft Launcher`
+- Installed apps: `%LOCALAPPDATA%\Programs\ArtCraft Apps`
+- Launcher preferences: `%LOCALAPPDATA%\ArtCraftLauncher`
+
+Projects stay in their existing folders. Adding a watched folder creates app-named subfolders inside it and scans the folder and its subfolders. The configured default app folder becomes each app’s working directory when launched. This can help apps choose a save location, but apps that manage their own save preferences may use a different location.
+
+Deleting a project removes the file from disk after confirmation. Uninstalling an app removes its launcher-managed installation; it does not remove project files.
+
+## License
+
+The launcher source is available under the [MIT License](LICENSE). ArtCraft app names, logos, and other third-party assets remain the property of their respective owners.
