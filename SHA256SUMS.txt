@@ -1,1 +1,1 @@
-284d422a629fc16cb47f09fec77d2d83e9d8af33203e978b52d7b5d75a2fdbe6  ArtCraftMasterSuite-Setup.exe
+9161da59981985960353d1397b00393794434eb5e3faba9e3c28174f35717aff  ArtCraftMasterSuite-Setup.exe

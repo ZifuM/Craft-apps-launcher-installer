@@ -5,8 +5,6 @@ mod windows_tray;
 
 mod project_preview;
 mod suite_update;
-mod app_screens;
-mod app_workspace;
 mod preview_formats;
 #[cfg(target_os = "windows")]
 mod preview_windows;
@@ -204,7 +202,6 @@ struct Preferences {
     reduce_motion: bool,
     compact_sidebar: bool,
     classic_sidebar: bool,
-    classic_app_screens: bool,
     light_mode: bool,
     minimize_to_tray: bool,
     start_with_windows: bool,
@@ -225,7 +222,7 @@ impl Default for Preferences {
         Self {
             automatic_updates: true, automatic_suite_updates: true, update_interval_hours: 4,
             update_notifications: true, automatic_project_scan: true,
-            project_scan_minutes: 3, reduce_motion: false, compact_sidebar: false, classic_sidebar: false, classic_app_screens: false, light_mode: false, minimize_to_tray: false, start_with_windows: false,
+            project_scan_minutes: 3, reduce_motion: false, compact_sidebar: false, classic_sidebar: false, light_mode: false, minimize_to_tray: false, start_with_windows: false,
             roots: Vec::new(), default_project_root: None,
             project_view: ProjectView::List, project_sort: "Recently modified".into(), favorite_projects: Vec::new(), installed: HashMap::new(), scanning: false,
         }
@@ -306,10 +303,6 @@ struct Launcher {
     detail_parent: Page,
     settings_tab: usize,
     your_apps_search: String,
-    manager_search: String,
-    collection_group: u8,
-    workspace_tabs: HashMap<String, u8>,
-    workspace_search: HashMap<String, String>,
     transitioned_page: Page,
     page_transition_started: Instant,
     brand_icon: egui::TextureHandle,
@@ -378,7 +371,6 @@ impl Launcher {
         style.text_styles.insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
         style.text_styles.insert(egui::TextStyle::Button, egui::FontId::proportional(13.0));
         style.visuals.override_text_color = Some(theme_rgb(230, 232, 238));
-        style.spacing.scroll = suite_scroll_style();
         cc.egui_ctx.set_style(style);
         let brand = image::load_from_memory(include_bytes!("../assets/artcraft-icon.png"))
             .expect("embedded ArtCraft logo is a valid PNG")
@@ -434,10 +426,6 @@ impl Launcher {
             detail_parent: Page::YourApps,
             settings_tab: 0,
             your_apps_search: String::new(),
-            manager_search: String::new(),
-            collection_group: 0,
-            workspace_tabs: HashMap::new(),
-            workspace_search: HashMap::new(),
             transitioned_page: Page::Home,
             page_transition_started: Instant::now() - Duration::from_millis(300),
             brand_icon,
@@ -1293,7 +1281,7 @@ impl Launcher {
             ui.painter().text(rect.left_center() + Vec2::new(45.0, -9.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(14.0), if selected { foreground() } else { theme_rgb(218, 221, 230) });
             ui.painter().text(rect.left_center() + Vec2::new(45.0, 11.0), egui::Align2::LEFT_CENTER, description, egui::FontId::proportional(10.0), muted());
             if let Some(count) = count {
-                let badge = egui::Rect::from_center_size(rect.right_center() + Vec2::new(-28.0, 0.0), Vec2::new(28.0, 22.0));
+                let badge = egui::Rect::from_center_size(rect.right_center() + Vec2::new(-21.0, -9.0), Vec2::new(27.0, 20.0));
                 ui.painter().rect_filled(badge, 6.0, if selected { theme_rgb(68, 55, 99) } else { theme_rgb(37, 40, 49) });
                 ui.painter().text(badge.center(), egui::Align2::CENTER_CENTER, if count > 99 { "99+".into() } else { count.to_string() }, egui::FontId::proportional(10.0), muted());
             }
@@ -1435,7 +1423,7 @@ impl Launcher {
         }
     }
 
-    fn classic_app_card(&mut self, ui: &mut egui::Ui, app: AppInfo) {
+    fn app_card(&mut self, ui: &mut egui::Ui, app: AppInfo) {
         let state = self.states.get(app.id).cloned().unwrap_or_default();
         egui::Frame::new()
             .fill(mix_color(card(), app.tint, 0.12))
@@ -1579,30 +1567,28 @@ impl Launcher {
             ui.painter().rect_filled(banner, 18.0, Color32::from_rgb(34, 29, 53));
             ui.painter().rect_stroke(banner, 18.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(66, 53, 92)), egui::StrokeKind::Inside);
             let show_art = banner.width() > 850.0;
-            // Center a measured-height text/action block against the artwork.
-            let block_top = banner.center().y - 66.0;
-            let text_rect = egui::Rect::from_min_max(egui::pos2(banner.left()+26.0, block_top), egui::pos2(banner.right()-if show_art {290.0}else{26.0}, block_top+132.0));
-            let painter = ui.painter_at(text_rect);
-            painter.text(text_rect.min, egui::Align2::LEFT_TOP, "ARTCRAFT MASTER SUITE", egui::FontId::proportional(10.0), Color32::from_rgb(189,168,247));
-            painter.text(text_rect.min+Vec2::new(0.0,22.0), egui::Align2::LEFT_TOP, "A space for every idea.", egui::FontId::proportional(30.0), Color32::WHITE);
-            painter.text(text_rect.min+Vec2::new(0.0,64.0), egui::Align2::LEFT_TOP, "Create, explore, and pick up where you left off.", egui::FontId::proportional(13.0), Color32::from_rgb(203,196,218));
-            let actions_rect = egui::Rect::from_min_size(text_rect.min+Vec2::new(0.0,96.0), Vec2::new(text_rect.width(),36.0));
-            let mut actions = ui.new_child(egui::UiBuilder::new().max_rect(actions_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-            actions.set_clip_rect(actions_rect.expand(2.0).intersect(ui.clip_rect()));
-            actions.spacing_mut().item_spacing.x=12.0;
-            if primary_button(&mut actions, if installed.is_empty() { "Explore apps" } else { "Your apps" }).clicked() { self.page = if installed.is_empty() { Page::Apps } else { Page::YourApps }; }
-            if secondary_button(&mut actions, "Browse projects").clicked() { self.project_filter = "All apps".into(); self.projects_tab = false; self.project_scope = "All projects".into(); self.search.clear(); self.page = Page::Projects; }
+            let text_rect = egui::Rect::from_min_max(banner.min + Vec2::new(26.0, 24.0), egui::pos2(banner.right() - if show_art { 290.0 } else { 26.0 }, banner.bottom() - 20.0));
+            let mut content = ui.new_child(egui::UiBuilder::new().max_rect(text_rect).layout(egui::Layout::top_down(egui::Align::Min)));
+            content.spacing_mut().item_spacing.y = 8.0;
+            content.label(RichText::new("ARTCRAFT MASTER SUITE").size(10.0).strong().color(Color32::from_rgb(189, 168, 247)));
+            content.label(RichText::new("A space for every idea.").size(30.0).strong().color(Color32::WHITE));
+            content.label(RichText::new("Create, explore, and pick up where you left off.").size(13.0).color(Color32::from_rgb(203, 196, 218)));
+            content.add_space(7.0);
+            content.horizontal(|ui| {
+                if primary_button(ui, if installed.is_empty() { "Explore apps" } else { "Your apps" }).clicked() { self.page = if installed.is_empty() { Page::Apps } else { Page::YourApps }; }
+                if secondary_button(ui, "Browse projects").clicked() { self.project_filter = "All apps".into(); self.projects_tab = false; self.project_scope = "All projects".into(); self.search.clear(); self.page = Page::Projects; }
+            });
             if show_art {
                 let center = egui::pos2(banner.right() - 143.0, banner.center().y);
                 let painter = ui.painter_at(banner.shrink(10.0));
-                painter.circle_stroke(center, 66.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(76, 61, 107)));
+                painter.circle_stroke(center, 78.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(76, 61, 107)));
                 painter.circle_filled(center, 52.0, Color32::from_rgb(51, 40, 80));
                 painter.circle_filled(center, 39.0, Color32::from_rgb(67, 50, 110));
                 let mark = egui::Rect::from_center_size(center, Vec2::splat(52.0));
                 painter.image(self.brand_icon.id(), mark, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                 for (index, app) in self.orbit_apps.iter().enumerate() {
                     let angle = -1.3 + index as f32 * std::f32::consts::TAU / self.orbit_apps.len() as f32;
-                    let position = center + Vec2::new(angle.cos() * 66.0, angle.sin() * 66.0);
+                    let position = center + Vec2::new(angle.cos() * 79.0, angle.sin() * 72.0);
                     let tile = egui::Rect::from_center_size(position, Vec2::splat(36.0));
                     painter.rect_filled(tile.expand(5.0), 11.0, mix_color(panel(), app.tint, 0.24));
                     painter.rect_stroke(tile.expand(5.0), 11.0, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.45)), egui::StrokeKind::Inside);
@@ -1704,7 +1690,7 @@ impl Launcher {
         });
     }
 
-    fn classic_your_apps_page(&mut self, ui: &mut egui::Ui) {
+    fn your_apps_page(&mut self, ui: &mut egui::Ui) {
         self.heading(ui, "YOUR COLLECTION", "Your apps", "Choose an app to open its workspace, manage updates, and pick up your projects.");
         ui.horizontal(|ui| {
             egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(9).inner_margin(10).show(ui, |ui| {
@@ -1771,7 +1757,7 @@ impl Launcher {
         });
     }
 
-    fn classic_apps_page(&mut self, ui: &mut egui::Ui) {
+    fn apps_page(&mut self, ui: &mut egui::Ui) {
         self.heading(
             ui,
             "THE APP LIBRARY",
@@ -1839,7 +1825,7 @@ impl Launcher {
             ui.columns(columns, |column_uis| {
                 for (index, app) in filtered.iter().enumerate() {
                     let column = index % columns;
-                    self.classic_app_card(&mut column_uis[column], *app);
+                    self.app_card(&mut column_uis[column], *app);
                     column_uis[column].add_space(18.0);
                 }
             });
@@ -1982,7 +1968,7 @@ impl Launcher {
         });
     }
 
-    fn classic_app_detail(&mut self, ui: &mut egui::Ui, id: &'static str) {
+    fn app_detail(&mut self, ui: &mut egui::Ui, id: &'static str) {
         let Some(app) = app_by_id(id).copied() else {
             self.page = Page::Apps;
             return;
@@ -2160,7 +2146,7 @@ impl Launcher {
         let actions_rect = egui::Rect::from_min_max(egui::pos2(rect.right() - 304.0, rect.center().y - 18.0), egui::pos2(rect.right() - 12.0, rect.center().y + 18.0));
         let details_rect = egui::Rect::from_min_max(egui::pos2(rect.left() + 80.0, rect.center().y - 18.0), egui::pos2(actions_rect.left() - 12.0, rect.center().y + 18.0));
         let mut details = ui.new_child(egui::UiBuilder::new().max_rect(details_rect).layout(egui::Layout::top_down(egui::Align::Min)));
-        details.set_clip_rect(details_rect.intersect(ui.clip_rect()));
+        details.set_clip_rect(details_rect);
         details.spacing_mut().item_spacing.y = 5.0;
         details.add(egui::Label::new(RichText::new(project.path.file_stem().unwrap_or_default().to_string_lossy()).size(14.0).strong()).truncate()).on_hover_text(project.path.display().to_string());
         let extension = project.path.extension().and_then(|e| e.to_str()).unwrap_or("file").to_uppercase();
@@ -2283,7 +2269,6 @@ impl Launcher {
                 ui.selectable_value(&mut self.prefs.classic_sidebar, true, "Classic");
             });
             ui.label(RichText::new("Classic restores the previous sidebar. Switch designs at any time.").size(12.0).color(muted()));
-            setting_toggle(ui, "Classic app screens", "Restore the previous app manager, collection and workspace layouts.", &mut self.prefs.classic_app_screens);
             ui.add_space(8.0);
             setting_toggle(ui, "Compact sidebar", "Keep navigation small, with app icons and tooltips.", &mut self.prefs.compact_sidebar);
             setting_toggle(ui, "Reduce motion", "Use static splash artwork and instant page transitions.", &mut self.prefs.reduce_motion);
@@ -2550,7 +2535,7 @@ impl eframe::App for Launcher {
             .frame(
                 egui::Frame::new()
                     .fill(ink())
-                    .inner_margin(egui::Margin { left: 26, right: 8, top: 20, bottom: 20 }),
+                    .inner_margin(egui::Margin::symmetric(26, 20)),
             )
             .show(ctx, |ui| match self.page {
                 _ => {
@@ -2564,7 +2549,7 @@ impl eframe::App for Launcher {
                             Page::Projects => self.projects_page(ui),
                             Page::Settings => { egui::ScrollArea::vertical().id_salt("settings-scroll").show(ui, |ui| { ui.set_width(ui.available_width().min(980.0)); self.settings_page(ui); }); },
                             Page::App(id) => {
-                                egui::ScrollArea::vertical().id_salt(("app-workspace",id)).show(ui, |ui| self.app_detail(ui, id));
+                                egui::ScrollArea::vertical().show(ui, |ui| self.app_detail(ui, id));
                             }
                         }
                     });
@@ -3607,28 +3592,7 @@ fn apply_theme(ctx: &egui::Context, light: bool) {
     style.visuals.widgets.open.corner_radius = 8.into();
     style.visuals.selection.bg_fill = mix_color(panel(), ACCENT, if light { 0.22 } else { 0.5 });
     for widget in [&mut style.visuals.widgets.inactive, &mut style.visuals.widgets.hovered, &mut style.visuals.widgets.active] { widget.corner_radius = 8.into(); }
-    style.spacing.scroll = suite_scroll_style();
     ctx.set_style(style);
-}
-
-fn suite_scroll_style() -> egui::style::ScrollStyle {
-    egui::style::ScrollStyle {
-        floating: true,
-        bar_width: 10.0,
-        floating_width: 5.0,
-        // Keep a permanent gutter so expansion never covers card controls or text.
-        floating_allocated_width: 16.0,
-        handle_min_length: 40.0,
-        bar_inner_margin: 4.0,
-        bar_outer_margin: 2.0,
-        foreground_color: true,
-        dormant_background_opacity: 0.0,
-        active_background_opacity: 0.16,
-        interact_background_opacity: 0.35,
-        dormant_handle_opacity: 0.30,
-        active_handle_opacity: 0.55,
-        interact_handle_opacity: 0.85,
-    }
 }
 
 fn readable_app_color(color: Color32) -> Color32 {
