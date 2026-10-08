@@ -1,0 +1,35 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:        # lets you press "Run workflow" manually
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write           # needed to publish the installer as a Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build Craft Launcher
+        run: cargo build --release
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build the installer (.exe)
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss'
+
+      - name: Publish installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: installer-${{ github.run_number }}
+          name: Craft Launcher installer #${{ github.run_number }}
+          files: dist/CraftLauncher-Setup.exe
