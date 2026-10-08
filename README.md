@@ -1,82 +1,89 @@
 # ArtCraft Master Suite
 
-A native Windows launcher for Storytold’s open-source creative and productivity apps. Install and manage the apps, browse projects from one place, and open each project in the app that supports it.
+**Your creative and productivity apps, projects, and updates in one Windows workspace.**
 
-> This is an independent community project and is not affiliated with Adobe Inc. Product names and marks belong to their respective owners.
+ArtCraft Master Suite is a native desktop install manager for Storytold’s ArtCraft apps. Discover tools, launch your installed apps, and pick up your saved projects from one place.
 
-## Download
+**[Download the installer](ArtCraftMasterSuite-Setup.exe)** · **[Build 2.2 release notes](RELEASE_NOTES_2.2.md)** · **[Build from source](ArtCraftLauncher-Source/README.md)**
 
-Download and run **[ArtCraftMasterSuite-Setup.exe](ArtCraftMasterSuite-Setup.exe)** to install the launcher for your Windows user. Setup adds Start menu and desktop shortcuts.
+> An independent community project, not affiliated with Adobe Inc. Third-party app names, logos, and other assets remain subject to their respective rights.
 
-The launcher installs creative apps separately and keeps project files in their existing folders. A network connection is needed to find, install, and check for app releases.
+## Get started
 
-## What it does
+1. Download and run **ArtCraftMasterSuite-Setup.exe**. Setup installs for your Windows user and adds Start menu and desktop shortcuts.
+2. Open **App Manager** to install the tools you want.
+3. Add a folder in **Projects** to bring your saved work into the library.
+4. Use **Your apps** to launch an app or enter its workspace.
 
-- Installs, updates, opens, and uninstalls the supported apps.
-- Brings projects from selected folders into one searchable library with List, Grid, and Waterfall views.
-- Filters projects by app, favorites, or the last seven days, with sorting by date, name, size, or app.
-- Manages watched folders in a separate Folders tab; removing a watched folder leaves its files untouched.
-- Offers right-click actions to reveal a project in File Explorer or copy its path.
-- Shows saved PSD/PSB canvas previews (8/16-bit RGB or grayscale with raw, RLE, or ZIP compression), plus embedded PhotoCraft previews. Changed previews refresh with the project scan.
-- Falls back to embedded thumbnails or the app logo for unsupported formats. Native VectorCraft JSON rendering and live unsaved previews are not supported.
-- Creates an app-named subfolder for every tool in added project directories.
-- Supports renaming and deleting project files, with confirmation before deletion.
-- Checks for updates automatically and lets you check an app manually.
+Apps are installed separately. Finding releases and downloading apps requires an internet connection. Project files stay in their folders; removing a watched folder only stops indexing it.
 
-## Sidebar designs
+## Explore the suite
 
-The Modern sidebar groups your workspace and management tools, with a compact icon rail available. Prefer the previous layout? Select **Settings → Appearance → Sidebar design → Classic** to restore it immediately. This preference is saved across restarts.
+### Home
 
-## Your apps
+Start with an overview of your installed apps, indexed projects, and available app updates. App-colored quick launch cards keep your tools close, with recent projects further down the page.
 
-Open **Your apps** in the sidebar to browse installed tools, grouped into Creative and Productivity apps. Select an app tile to access its existing launch, update, uninstall, and project controls. The collection updates when apps are installed or removed.
+![ArtCraft Master Suite Home with workspace totals and app-colored quick launch cards](docs/screenshots/home.png)
 
-## Workspace preferences
+### Your apps
 
-Settings is organized into **Appearance**, **Updates**, **Projects**, **Windows**, and **About** tabs, with saved controls for:
+Browse only the tools installed on your PC. Search your collection, filter by Creative or Productivity, and choose **Open app** to launch directly or **Workspace** to manage that app’s projects. The collection refreshes as apps are installed or removed.
 
-- Automatic release checks, with an interval from 1 to 24 hours (default: 4 hours).
-- Persistent update notifications, which can be turned off separately.
-- Automatic project refresh, from 1 to 30 minutes (default: 3 minutes).
-- Compact sidebar, reduced motion, and List / Grid / Waterfall project views.
-- Project folders and the default working folder for apps.
+![Your apps showing installed app cards, version information, and Open app and Workspace buttons](docs/screenshots/your-apps.png)
 
-Background checks run while the launcher is open. Creative and productivity app updates remain manual. Master Suite itself can update automatically, controlled separately in Settings → Updates. Manual checks and refresh remain available when background checks are off.
+Each app workspace has three tabs:
+
+- **Projects:** search saved work, browse previews, and switch between List, Grid, and Waterfall views.
+- **Asset management:** a Coming soon layout; asset features are not implemented yet.
+- **Plugin management:** a Coming soon layout; plugin features are not implemented yet.
+
+### Projects
+
+Keep work from your connected folders in one searchable library. Filter by app, favorites, or recent work; sort your files; and choose List, Grid, or Waterfall view. Supported files show previews of their saved contents.
+
+Open projects in their associated app, mark favorites, reveal files in File Explorer, rename them, or delete them with confirmation. The **Folders** tab manages connected locations and the default project folder.
+
+![Projects library in compact List view with filters, file previews, and project actions](docs/screenshots/projects.png)
+
+### App Manager
+
+Discover Creative and Productivity apps in separate categories. Search by name or purpose, filter installed apps or available updates, and manage installation, launch, update, and removal from app-colored cards. Up-arrow controls provide update actions.
+
+![App Manager showing Creative and Productivity categories, search, filters, and app management cards](docs/screenshots/app-manager.png)
+
+Screenshots show an example local setup. Installed apps, project counts, and app versions vary by device.
 
 ## Supported apps
 
-**Creative Apps:** PhotoCraft · VectorCraft · FilmCraft · LightCraft · EffectCraft · DesignCraft · SoundCraft
+| Creative apps | Productivity apps |
+| --- | --- |
+| PhotoCraft — image editing | PdfCraft — PDF workbench |
+| VectorCraft — vector illustration | CADCraft — CAD and drafting |
+| FilmCraft — video editing | GridCraft — spreadsheets |
+| LightCraft — photo library | WordCraft — word processing |
+| EffectCraft — motion and VFX | DeckCraft — presentations |
+| DesignCraft — page layout | |
+| SoundCraft — audio | |
 
-**Productivity Apps:** PdfCraft · CADCraft · GridCraft · WordCraft · DeckCraft
+Build 2.2 lists SoundCraft as Coming soon, with no installable Windows release configured. App availability depends on upstream releases.
 
-SoundCraft is listed in the launcher, but does not yet have an official Windows release to install.
+See the [source README](ArtCraftLauncher-Source/README.md) for recognized file formats, local data locations, and build instructions.
 
-The launcher recognizes common project and media extensions for each app, including PSD/PSB, SVG, video-project interchange files, camera RAW, PDF, Lottie, and page-layout documents. See the [source README](ArtCraftLauncher-Source/README.md) for the complete format list, local data locations, and build instructions.
+## Make it yours
 
-## Source code
+Settings are grouped into **Appearance**, **Updates**, **Projects**, **Windows**, and **About**.
 
-The current source code and assets are in [`ArtCraftLauncher-Source`](ArtCraftLauncher-Source/).
+- Choose **Dark** or **Light** mode, compact navigation, and reduced motion.
+- Switch between **Modern** and **Classic** sidebar designs.
+- Enable **Classic app screens** to restore the earlier App Manager, Your apps, and app workspace layouts. The [source backup](ArtCraftLauncher-Source/backups/app-screens-before-redesign/) is retained too.
+- Set your preferred project view, connected folders, and default working folder.
+- Configure app release checks from 1–24 hours and project refresh from 1–30 minutes; defaults are 4 hours and 3 minutes.
+- Control persistent update notifications and automatic Master Suite updates.
+- Optionally **minimize to the system tray** or **start with Windows in the tray**. Both are off by default.
 
-The launcher source is licensed under the [MIT License](ArtCraftLauncher-Source/LICENSE). The license for the launcher does not change the rights for third-party app names, logos, or other assets.
+Click the tray icon to reopen Master Suite, or right-click for Open and Quit. Closing the window exits; the minimize-to-tray preference applies to minimizing. Windows startup opens quietly without the splash animation.
 
-## Verify downloads
-
-`SHA256SUMS.txt` contains SHA-256 a checksum for the installer. On Windows, verify a file with:
-
-```powershell
-Get-FileHash .\ArtCraftMasterSuite-Setup.exe -Algorithm SHA256
-```
-
-Compare the resulting hash with the matching entry in `SHA256SUMS.txt`.
-
-## Light mode and Windows startup
-
-- **Settings → Appearance → Theme:** choose Dark or Light. The choice is saved.
-- **Settings → Windows → Minimize to system tray:** optional, off by default. Minimizing hides the window; closing still exits.
-- **Settings → Windows → Start with Windows in the tray:** optional, off by default. Starts quietly at sign-in without the splash screen.
-
-Click the tray icon to reopen Master Suite, or right-click for Open and Quit. Opening its shortcut brings the existing instance forward. If the tray cannot be created, the window remains accessible. Uninstalling removes the Windows startup entry.
-
+Background checks run while Master Suite is open. Creative and productivity app updates are installed manually; Master Suite’s own automatic updates are controlled separately in **Settings → Updates**.
 
 ## Project preview support
 
@@ -115,11 +122,14 @@ The updater uses GitHub's asset SHA-256 digest when available, otherwise a match
 
 Updating files on the repository's main branch alone does not publish an app update. Users on an older build without the self-updater must install 2.2.0 or later once to receive future automatic updates.
 
+## Verify the installer
 
-## App screen designs
+Compare the installer’s SHA-256 hash with the entry in [SHA256SUMS.txt](SHA256SUMS.txt):
 
-Build 2.2 introduces redesigned **App Manager** and **Your apps** screens with app-colored headers, aligned action rows, category filters and search. Your apps includes direct launch and workspace buttons. App Manager retains install, launch, update, uninstall and app-detail actions.
+```powershell
+Get-FileHash .\ArtCraftMasterSuite-Setup.exe -Algorithm SHA256
+```
 
-To restore the previous screens, enable **Settings → Appearance → Classic app screens**. This setting is independent of the sidebar design. The pre-redesign source snapshot is also preserved in `ArtCraftLauncher-Source/backups/app-screens-before-redesign/`.
+## Source and license
 
-Each app workspace includes a searchable Projects tab with List, Grid and Waterfall views. Asset management and Plugin management are clearly marked Coming soon; their features are not implemented yet. Classic app screens also restores the previous workspace layout.
+Source code and assets are in [ArtCraftLauncher-Source](ArtCraftLauncher-Source/). The launcher source is licensed under the [MIT License](ArtCraftLauncher-Source/LICENSE). This license does not change the rights for third-party app names, logos, or other assets.
