@@ -27,7 +27,9 @@ Version: `3.4.0-beta.1` · Tag: `v3.4.0-beta.1`
 
 ## Build and release status
 
-This release is a **draft prerelease** for review. The release workflow builds Windows x64, native Linux x86_64/ARM64 packages and the universal macOS app from the same tag, then attaches the packages and checksums without publishing the draft.
+All six packages built successfully on native GitHub runners on 10 October 2026. Downloaded copies match `SHA256SUMS.txt`; the universal macOS app passed architecture, signature-integrity and DMG-integrity checks. [Build results](https://github.com/ZifuM/Craft-apps-launcher-installer/actions/runs/38005627550).
+
+This release remains a **draft prerelease** for review and has not been published. Packages were built from commit `87ca286537fc05b94f11e5c569a53f32541a6566` (`v3.4.0-beta.1`).
 
 ## Known limitations
 

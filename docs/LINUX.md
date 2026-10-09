@@ -4,7 +4,7 @@ The latest Windows interface, update discovery, settings and core source are sha
 
 ## Current status
 
-Build 3.4 uses the shared V2/Legacy themes, popup Settings and Cloud, window memory, project-folder moves and startup animations and the existing native Linux packaging. The release workflow builds x86_64 and ARM64 AppImage and Flatpak packages from `v3.4.0-beta.1`. All packages are attached to the draft after successful builds; Build 3.4 remains unpublished for review. Native desktop behavior has not been manually validated for this build.
+Build 3.4 uses the shared V2/Legacy themes, popup Settings and Cloud, window memory, project-folder moves and startup animations and the existing native Linux packaging. The x86_64 and ARM64 AppImage and Flatpak packages built successfully from `v3.4.0-beta.1` on native GitHub runners. All four files are attached to the draft prerelease, and downloaded copies match the release checksums. Build 3.4 remains unpublished for review. Native desktop behavior has not been manually validated for this build.
 
 Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 

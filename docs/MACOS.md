@@ -8,7 +8,7 @@ The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and 
 
 ## Build status
 
-The release workflow builds `v3.4.0-beta.1` for Intel and Apple Silicon, combines them into a universal app and checks signature and DMG integrity during packaging. All packages are attached to the draft after successful builds; Build 3.4 remains unpublished for review. Native desktop behavior has not been manually validated for this build.
+Build `v3.4.0-beta.1` compiled successfully for Intel and Apple Silicon. The universal app passed architecture and code-signature checks, the DMG passed its integrity check, and the downloaded package matches the release checksum. It is attached to the unpublished Build 3.4 draft prerelease. Native desktop behavior has not been manually validated for this build.
 
 ## Install
 

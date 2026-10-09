@@ -6,7 +6,7 @@ Your Craft apps, projects and backups in one desktop workspace.
 
 [Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases) · [Build 3.4 notes](RELEASE_NOTES_3.4.md) · [Build from source](ArtCraftLauncher-Source/README.md)
 
-Build 3.4 is being prepared as a **draft prerelease**. Draft downloads are available to repository maintainers; public downloads remain under Releases until it is published.
+Build 3.4 is a **draft prerelease** for review, with all six installable packages built. Draft downloads are available to repository maintainers; public downloads remain under Releases until it is published.
 
 ## Install
 
