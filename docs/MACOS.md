@@ -6,6 +6,10 @@ Build 3.1 adds a universal macOS application and a drag-to-Applications disk ima
 
 The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and packaging are performed on a GitHub macOS runner; a successful build does not establish desktop compatibility on every supported OS version.
 
+## Build status
+
+Build 3.1 was compiled for Intel and Apple Silicon on GitHub's Mac runner. The universal app, code-signature integrity and DMG integrity checks passed, and the downloaded DMG matches the draft release checksum. The installable DMG is attached to the Build 3.1 draft; desktop behavior has not yet been manually validated.
+
 ## Install
 
 Open the DMG, drag **ArtCraft Master Suite.app** to Applications (or your user's `~/Applications` folder), eject the image, and launch the installed app. Complete onboarding to choose a project folder and language.
