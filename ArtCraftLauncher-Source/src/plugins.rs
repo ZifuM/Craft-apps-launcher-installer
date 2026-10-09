@@ -157,3 +157,25 @@ pub fn uninstall(app:&AppInfo,index:usize)->Result<(),String>{
     list.remove(index);if let Err(error)=save(app,&list){for (original,backup) in staged.iter().rev(){let _=fs::rename(backup,original);}return Err(error);}
     for (_,backup) in staged{let _=fs::remove_file(backup);}Ok(())
 }
+
+pub fn relocate_workspace(source: &Path, destination: &Path) -> Result<(), String> {
+    let rebase = |path: &mut PathBuf| {
+        if let Ok(relative) = path.strip_prefix(source) { *path = destination.join(relative); }
+    };
+    for app in APPS.iter().filter(|app| supported(app.id)) {
+        let mut list = entries(app)?;
+        let before = serde_json::to_vec(&list).map_err(|e| e.to_string())?;
+        for entry in &mut list { rebase(&mut entry.stored); rebase(&mut entry.deployed); }
+        if before != serde_json::to_vec(&list).map_err(|e| e.to_string())? { save(app, &list)?; }
+        let config = config_path(app)?;
+        if !config.exists() { continue; }
+        let mut value = json_file(&config)?;
+        let key = if app.id == "photocraft" { "/plugIns/additionalPluginsFolder" } else { "/engine_prefs/pluginsFolder" };
+        if let Some(field) = value.pointer_mut(key) {
+            if let Some(path) = field.as_str().map(PathBuf::from) {
+                if let Ok(relative) = path.strip_prefix(source) { *field = json!(destination.join(relative)); save_config(&config, &value)?; }
+            }
+        }
+    }
+    Ok(())
+}

@@ -4,11 +4,11 @@ A native Windows, Linux and macOS home for Storytold’s open-source creative an
 
 > ArtCraft Master Suite is an independent community project. It is not affiliated with Adobe Inc. Adobe and other product names and marks belong to their respective owners.
 
-## Build 3.3 prerelease
+## Build 3.4 prerelease
 
-Version `3.3.0-beta.1` shares the new banners, app workspaces, compact toolbars, sidebar workspace shortcuts and Properties interface across all desktop targets. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+Version `3.4.0-beta.1` shares V2 light/dark mode, popup Settings and Cloud, remembered window placement, project-folder moves and themed startup animations across all desktop targets. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
 
-The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `windows_backup` filenames now contain shared code. Native operations remain behind target-specific guards. Old view source files remain for reference but are no longer selected by `main.rs`.
+The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `windows_backup` filenames now contain shared code. Native operations remain behind target-specific guards. Unused duplicate views and saved source backups have been removed; Git history retains them.
 
 ## Features
 
@@ -37,7 +37,7 @@ The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `win
 | WordCraft | Word processing | `.docx`, `.odt`, `.rtf`, `.html`, `.md`, `.txt` |
 | DeckCraft | Presentations | `.deckcraft`, `.pptx` |
 
-The App Manager separates **Creative Apps** and **Productivity Apps**. It selects the available official package for the current operating system and architecture.
+V2 lists installed and available apps with category filters. Legacy separates **Creative Apps** and **Productivity Apps**. It selects the available official package for the current operating system and architecture.
 
 The launcher matches files by extension. A preview is shown when it can be extracted from the file; formats without readable preview data show an unavailable-preview fallback. Recognizing an Adobe-compatible file extension does not guarantee that every feature of that format is supported by the app.
 

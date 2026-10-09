@@ -14,7 +14,7 @@ impl Launcher {
             if id == app.id {
                 let mut remove = false;
                 let mut cancel = false;
-                let response=egui::Modal::new(egui::Id::new("remove-plugin")).frame(egui::Frame::new().fill(panel()).corner_radius(16).inner_margin(24)).show(ui.ctx(),|ui|{
+                let response=egui::Modal::new(egui::Id::new("remove-plugin")).frame(egui::Frame::new().fill(panel()).corner_radius(UI_RADIUS).inner_margin(24)).show(ui.ctx(),|ui|{
                     ui.set_width(400.0);ui.heading(tr("Remove plugin?"));ui.add_space(12.0);ui.label(tr("Remove this installed extension from the app? Your projects and the original downloaded package are kept."));ui.add_space(20.0);
                     ui.horizontal(|ui|{cancel=secondary_button(ui,"Cancel").clicked();remove=danger_button(ui,"Remove plugin").clicked();});
                 });
@@ -49,7 +49,7 @@ impl Launcher {
             return;
         };
         let base = root.join(app.name);
-        egui::Frame::new().fill(mix_color(panel(),app.tint,0.04)).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(12).inner_margin(18).show(ui,|ui|{
+        egui::Frame::new().fill(mix_color(panel(),app.tint,0.04)).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(UI_RADIUS).inner_margin(18).show(ui,|ui|{
             ui.set_width(ui.available_width());ui.label(RichText::new(tr("Master Suite integration")).font(toolbar::font(17.0,true)));
             ui.label(RichText::new(tr("Built in · Workspace folders")).size(text_size(11.0)).color(readable_app_color(app.tint)));
             ui.add_space(10.0);
@@ -61,10 +61,10 @@ impl Launcher {
         ui.add_space(18.0);
         let supported = plugins::supported(app.id);
         if !supported {
-            egui::Frame::new().fill(panel()).corner_radius(12).inner_margin(18).show(ui,|ui|{ui.set_width(ui.available_width());ui.label(tr("Plugin installation is not supported for this app yet."));ui.label(RichText::new(tr("A compatible plugin loader must be available in the app before Master Suite can install extensions for it.")).color(muted()));});
+            egui::Frame::new().fill(panel()).corner_radius(UI_RADIUS).inner_margin(18).show(ui,|ui|{ui.set_width(ui.available_width());ui.label(tr("Plugin installation is not supported for this app yet."));ui.label(RichText::new(tr("A compatible plugin loader must be available in the app before Master Suite can install extensions for it.")).color(muted()));});
             return;
         }
-        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(12).inner_margin(16).show(ui,|ui|{
+        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(UI_RADIUS).inner_margin(16).show(ui,|ui|{
             ui.set_width(ui.available_width());
             ui.label(RichText::new(tr("Install a plugin")).font(toolbar::font(17.0,true)));
             ui.label(RichText::new(tr("Choose a local package or paste a GitHub release link.")).font(toolbar::font(12.0,false)).color(muted()));
@@ -108,7 +108,7 @@ impl Launcher {
                     egui::Frame::new()
                         .fill(panel())
                         .stroke(egui::Stroke::new(1.0_f32, border()))
-                        .corner_radius(10)
+                        .corner_radius(UI_RADIUS)
                         .inner_margin(16)
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());

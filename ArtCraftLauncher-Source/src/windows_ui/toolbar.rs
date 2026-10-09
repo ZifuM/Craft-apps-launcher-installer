@@ -13,7 +13,7 @@ pub(crate) fn style(ui: &mut egui::Ui) {
     }
     ui.spacing_mut().button_padding = Vec2::new(14.0, 10.0);
     ui.spacing_mut().interact_size.y = HEIGHT;
-    ui.style_mut().visuals.widgets.inactive.corner_radius = 6.into();
+    ui.style_mut().visuals.widgets.inactive.corner_radius = UI_RADIUS.into();
 }
 pub(crate) fn font(size: f32, strong: bool) -> egui::FontId {
     egui::FontId::new(
@@ -192,7 +192,7 @@ pub(crate) fn button(
                 egui::Button::new("")
                     .fill(fill)
                     .stroke(egui::Stroke::new(1.0_f32, border()))
-                    .corner_radius(6),
+                    .corner_radius(UI_RADIUS),
             )
         })
         .inner;
@@ -363,7 +363,7 @@ pub(crate) fn page_banner(
         Vec2::splat(icon_size),
     );
     ui.painter()
-        .rect_filled(icon, 18, mix_color(panel(), accent, 0.16));
+        .rect_filled(icon, UI_RADIUS, mix_color(panel(), accent, 0.16));
     banner_symbol(
         ui.painter(),
         icon.shrink(icon_size * 0.24),
@@ -450,7 +450,7 @@ pub(crate) fn standard(ui: &mut egui::Ui, label: &str, primary: bool) -> egui::R
             1.0_f32,
             if primary { ACCENT } else { border() },
         ))
-        .corner_radius(6)
+        .corner_radius(UI_RADIUS)
         .min_size(Vec2::new(100.0, HEIGHT)),
     )
 }
@@ -509,12 +509,12 @@ pub(crate) fn metric(
         ui.allocate_exact_size(Vec2::new(ui.available_width(), 108.0), egui::Sense::click());
     ui.painter().rect_filled(
         rect,
-        10.0,
+        UI_RADIUS,
         if response.hovered() { card() } else { panel() },
     );
     ui.painter().rect_stroke(
         rect,
-        10.0,
+        UI_RADIUS,
         egui::Stroke::new(
             1.0_f32,
             if response.has_focus() {
@@ -606,10 +606,10 @@ pub(crate) fn field(ui: &mut egui::Ui, id: &str, value: &mut String, hint: &str)
     let input_id = ui.id().with(id);
     let focused = ui.memory(|m| m.has_focus(input_id));
     ui.painter()
-        .rect_filled(rect, 6.0, if focused { card() } else { ink() });
+        .rect_filled(rect, UI_RADIUS, if focused { card() } else { ink() });
     ui.painter().rect_stroke(
         rect,
-        6.0,
+        UI_RADIUS,
         egui::Stroke::new(1.0_f32, if focused { ACCENT } else { border() }),
         egui::StrokeKind::Inside,
     );
@@ -648,10 +648,10 @@ pub(crate) fn tabs(
     items: &[(&str, Option<usize>)],
     selected: usize,
 ) -> Option<usize> {
-    ui.painter().rect_filled(rect, 8.0, panel());
+    ui.painter().rect_filled(rect, UI_RADIUS, panel());
     ui.painter().rect_stroke(
         rect,
-        8.0,
+        UI_RADIUS,
         egui::Stroke::new(1.0_f32, border()),
         egui::StrokeKind::Inside,
     );
@@ -670,7 +670,7 @@ pub(crate) fn tabs(
         if active || response.hovered() {
             ui.painter().rect_filled(
                 r,
-                5.0,
+                UI_RADIUS,
                 if active {
                     mix_color(card(), foreground(), 0.06)
                 } else {
@@ -681,7 +681,7 @@ pub(crate) fn tabs(
         if response.has_focus() {
             ui.painter().rect_stroke(
                 r,
-                5.0,
+                UI_RADIUS,
                 egui::Stroke::new(1.0_f32, ACCENT),
                 egui::StrokeKind::Inside,
             );
@@ -720,7 +720,7 @@ pub(crate) fn tabs(
             );
             painter.rect_filled(
                 badge,
-                4.0,
+                UI_RADIUS,
                 if active {
                     mix_color(panel(), ACCENT, 0.13)
                 } else {
@@ -760,10 +760,10 @@ pub(crate) fn search(
         ui.memory_mut(|m| m.surrender_focus(input_id));
     }
     ui.painter()
-        .rect_filled(rect, 6.0, if focused { card() } else { panel() });
+        .rect_filled(rect, UI_RADIUS, if focused { card() } else { panel() });
     ui.painter().rect_stroke(
         rect,
-        6.0,
+        UI_RADIUS,
         egui::Stroke::new(1.0_f32, if focused { ACCENT } else { border() }),
         egui::StrokeKind::Inside,
     );
@@ -811,7 +811,7 @@ pub(crate) fn search(
         );
         ui.painter().rect_stroke(
             key_rect,
-            4.0,
+            UI_RADIUS,
             egui::Stroke::new(1.0_f32, border()),
             egui::StrokeKind::Inside,
         );
@@ -839,7 +839,7 @@ pub(crate) fn select(
     let mut child = cell(ui, rect);
     child.visuals_mut().widgets.inactive.weak_bg_fill = panel();
     child.visuals_mut().widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, border());
-    child.visuals_mut().widgets.inactive.corner_radius = 6.into();
+    child.visuals_mut().widgets.inactive.corner_radius = UI_RADIUS.into();
     egui::ComboBox::from_id_salt(id)
         .width(rect.width())
         .height(320.0)
@@ -858,10 +858,10 @@ pub(crate) fn divider(ui: &mut egui::Ui) {
 }
 
 pub(crate) fn views(ui: &mut egui::Ui, rect: egui::Rect, selected: &mut ProjectView) -> bool {
-    ui.painter().rect_filled(rect, 6.0, panel());
+    ui.painter().rect_filled(rect, UI_RADIUS, panel());
     ui.painter().rect_stroke(
         rect,
-        6.0,
+        UI_RADIUS,
         egui::Stroke::new(1.0_f32, border()),
         egui::StrokeKind::Inside,
     );
@@ -880,7 +880,7 @@ pub(crate) fn views(ui: &mut egui::Ui, rect: egui::Rect, selected: &mut ProjectV
         );
         if *selected == view {
             ui.painter()
-                .rect_filled(r, 4.0, mix_color(card(), foreground(), 0.06));
+                .rect_filled(r, UI_RADIUS, mix_color(card(), foreground(), 0.06));
         }
         let mut child = cell(ui, r);
         if icon_button_sized(

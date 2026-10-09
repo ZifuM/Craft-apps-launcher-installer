@@ -93,7 +93,7 @@ impl Cloud{
    Some(path)=>match fs::read(path).ok().and_then(|b|serde_json::from_slice(&b).ok()){Some(v)=>v,None=>{message="Saved backup settings could not be read. Re-select your sync folders.".into();CloudSettings::default()}},None=>CloudSettings::default()};
   Self{monitor:windows_backup::Monitor::new(),settings,history:Vec::new(),busy:false,message,errors:HashMap::new(),search:String::new(),tab:0,view_filter:0,disconnect_provider:None,tx,rx,cancel:Arc::new(AtomicBool::new(false)),last_auto:Instant::now(),save_error:None}
  }
- fn persist(&self)->Result<(),String>{let path=settings_path()?;fs::create_dir_all(path.parent().unwrap()).map_err(|e|e.to_string())?;let temp=path.with_extension("new");fs::write(&temp,serde_json::to_vec_pretty(&self.settings).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;fs::rename(temp,path).map_err(|e|e.to_string())}
+ pub(super) fn persist(&self)->Result<(),String>{let path=settings_path()?;fs::create_dir_all(path.parent().unwrap()).map_err(|e|e.to_string())?;let temp=path.with_extension("new");fs::write(&temp,serde_json::to_vec_pretty(&self.settings).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;fs::rename(temp,path).map_err(|e|e.to_string())}
  pub fn save(&mut self){if let Err(e)=self.persist(){self.message=format!("Could not save backup settings: {e}");self.save_error=Some(self.message.clone());self.settings.automatic=false;}else{self.save_error=None;}}
  pub fn connect(&mut self,p:Provider){
   if self.busy{return;}let mut picker=rfd::FileDialog::new().set_title(crate::tr(format!("Choose your {} synced folder",p.name())));if let Some(path)=self.settings.folders.get(&p).map(|f|f.path.clone()).or_else(||detect(p)){picker=picker.set_directory(path);}

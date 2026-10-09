@@ -84,7 +84,7 @@ fn surface() -> egui::Frame {
     egui::Frame::new()
         .fill(panel())
         .stroke(egui::Stroke::new(1.0_f32, border()))
-        .corner_radius(12)
+        .corner_radius(UI_RADIUS)
         .inner_margin(16)
 }
 use crate::cloud::windows_backup::{State, Summary};
@@ -102,7 +102,7 @@ fn status_color(state: State) -> Color32 {
 pub(super) fn paint_backup(p: &egui::Painter, rect: egui::Rect, state: State) {
     let color = status_color(state);
     if state == State::Confirmed {
-        p.rect_filled(rect, 5.0, mix_color(panel(), color, 0.17));
+        p.rect_filled(rect, UI_RADIUS, mix_color(panel(), color, 0.17));
     }
     paint_cloud(p, rect, color);
     if state == State::Local {
@@ -174,7 +174,7 @@ impl Launcher {
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
         paint_backup(ui.painter(), rect, summary.state);
         if response.on_hover_text(summary.tooltip).clicked() {
-            self.page = Page::Cloud;
+            self.open_cloud();
         }
     }
     pub(super) fn cloud_page(&mut self, ui: &mut egui::Ui) {
@@ -358,7 +358,7 @@ impl Launcher {
                         }
                     });
                     let button = egui::Button::new(RichText::new(tr(if connected{"Change folder"}else{"Choose folder"})).font(toolbar::font(12.0,true)))
-                        .min_size(Vec2::new(116.0,32.0)).fill(if connected{panel()}else{mix_color(panel(),ACCENT,0.18)}).corner_radius(6);
+                        .min_size(Vec2::new(116.0,32.0)).fill(if connected{panel()}else{mix_color(panel(),ACCENT,0.18)}).corner_radius(UI_RADIUS);
                     if actions.add_enabled(!self.cloud.busy,button).clicked(){self.cloud.connect(provider);}
                     if connected {
                         let mut enabled=self.cloud.settings.targets.contains(&provider);
@@ -548,7 +548,7 @@ impl Launcher {
             } else {
                 panel()
             };
-            ui.painter().rect_filled(r, 8.0, fill);
+            ui.painter().rect_filled(r, UI_RADIUS, fill);
 
             let mut check = ui.new_child(egui::UiBuilder::new().max_rect(
                 egui::Rect::from_min_size(r.min + Vec2::new(15.0, 25.0), Vec2::splat(22.0)),
@@ -616,7 +616,7 @@ impl Launcher {
                 1.0_f32,
                 if selected { ACCENT } else { border() },
             ))
-            .corner_radius(10)
+            .corner_radius(UI_RADIUS)
             .inner_margin(12)
             .show(ui, |ui| {
                 let width = ui.available_width();

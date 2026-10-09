@@ -2,10 +2,10 @@
 use super::*;
 
 pub(crate) fn style(ui: &mut egui::Ui) {
-    toolbar::style(ui);
+    if !ui_themes::is_v2() { toolbar::style(ui); }
     ui.set_min_width(184.0);
-    ui.spacing_mut().button_padding = Vec2::new(10.0, 6.0);
-    ui.spacing_mut().interact_size.y = 32.0;
+    ui.spacing_mut().button_padding = Vec2::new(10.0, if ui_themes::is_v2() { 4.0 } else { 6.0 });
+    ui.spacing_mut().interact_size.y = if ui_themes::is_v2() { 28.0 } else { 32.0 };
     ui.spacing_mut().item_spacing.y = 3.0;
 }
 
@@ -35,7 +35,7 @@ pub(crate) fn more(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut eg
         ui,
         egui::Button::new("")
             .min_size(Vec2::splat(32.0))
-            .corner_radius(6)
+            .corner_radius(UI_RADIUS)
             .frame(false),
         |ui| {
             style(ui);
@@ -56,7 +56,7 @@ pub(crate) fn more(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut eg
     if menu.response.has_focus() {
         ui.painter().rect_stroke(
             menu.response.rect,
-            6,
+            UI_RADIUS,
             egui::Stroke::new(1.0_f32, ACCENT),
             egui::StrokeKind::Inside,
         );
@@ -67,11 +67,11 @@ pub(crate) fn more(ui: &mut egui::Ui, label: &str, contents: impl FnOnce(&mut eg
 }
 
 pub(crate) struct Properties {
-    app: AppInfo,
-    project: Option<Project>,
-    directory: Option<PathBuf>,
-    file: Option<PathBuf>,
-    metadata: Vec<(String, String)>,
+    pub(crate) app: AppInfo,
+    pub(crate) project: Option<Project>,
+    pub(crate) directory: Option<PathBuf>,
+    pub(crate) file: Option<PathBuf>,
+    pub(crate) metadata: Vec<(String, String)>,
 }
 impl Properties {
     pub(crate) fn app(app: AppInfo) -> Self {
@@ -138,7 +138,7 @@ fn file_metadata(path: Option<&Path>) -> Vec<(String, String)> {
 fn detail(ui: &mut egui::Ui, label: &str, value: &str) {
     egui::Frame::new()
         .fill(card())
-        .corner_radius(10)
+        .corner_radius(UI_RADIUS)
         .inner_margin(12)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -219,7 +219,7 @@ impl Launcher {
             self.project_menu_items(ui, project);
         });
     }
-    fn project_menu_items(&mut self, ui: &mut egui::Ui, project: &Project) {
+    pub(crate) fn project_menu_items(&mut self, ui: &mut egui::Ui, project: &Project) {
         if item(ui, &format!("Open in {}", project.app.name), true, false).clicked() {
             self.launch(*project.app, Some(&project.path));
             ui.close_menu();
@@ -263,7 +263,7 @@ impl Launcher {
         if item(ui, "Cloud backup", true, false).clicked() {
             self.cloud.tab = 0;
             self.cloud.search = project.title.clone();
-            self.page = Page::Cloud;
+            self.open_cloud();
             ui.close_menu();
         }
         if item(ui, "Properties", true, false).clicked() {
@@ -277,6 +277,7 @@ impl Launcher {
         }
     }
     pub(crate) fn properties_dialog(&mut self, ctx: &egui::Context) {
+        if self.active_theme == UiTheme::V2 { self.v2_properties(ctx); return; }
         let Some(properties) = self.properties.take() else {
             return;
         };
@@ -289,7 +290,7 @@ impl Launcher {
                 egui::Frame::new()
                     .fill(panel())
                     .stroke(egui::Stroke::new(1.0_f32, border()))
-                    .corner_radius(14)
+                    .corner_radius(UI_RADIUS)
                     .inner_margin(24),
             )
             .show(ctx, |ui| {
@@ -298,7 +299,7 @@ impl Launcher {
                 let background = ui.painter().add(egui::Shape::Noop);
                 let identity =
                     egui::Frame::new()
-                        .corner_radius(14)
+                        .corner_radius(UI_RADIUS)
                         .inner_margin(18)
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
@@ -339,7 +340,7 @@ impl Launcher {
                             );
                             if let Some(texture) = &state.icon {
                                 egui::Image::new((texture.id(), texture.size_vec2()))
-                                    .corner_radius(14)
+                                    .corner_radius(UI_RADIUS)
                                     .paint_at(ui, logo);
                             } else {
                                 let mut child = ui.new_child(egui::UiBuilder::new().max_rect(logo));
@@ -364,7 +365,7 @@ impl Launcher {
                         (ctx.screen_rect().height() - identity.response.rect.height() - 180.0)
                             .max(100.0),
                     )
-                    .show(ui, |ui| {
+                    .show_scoped(ui, |ui| {
                         if properties.project.is_none() {
                             detail(ui, "Description", &tr(app.blurb));
                             detail(

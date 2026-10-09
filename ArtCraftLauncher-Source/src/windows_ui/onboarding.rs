@@ -2,6 +2,7 @@ use super::*;
 
 impl Launcher {
     pub(super) fn onboarding(&mut self, ctx: &egui::Context) {
+        if self.active_theme == UiTheme::V2 { self.v2_onboarding(ctx); return; }
         let titles = [
             "Welcome to ArtCraft",
             "Your project folder",
@@ -11,7 +12,7 @@ impl Launcher {
         let mut finish = false;
         egui::Modal::new(egui::Id::new("first-run-setup"))
             .backdrop_color(Color32::from_black_alpha(185))
-            .frame(egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(32))
+            .frame(egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(32))
             .show(ctx, |ui| {
                 ui.set_width(540.0_f32.min(ctx.screen_rect().width() - 100.0));
                 ui.horizontal(|ui| {
@@ -27,11 +28,11 @@ impl Launcher {
                     for step in 0..4 {
                         let width = (ui.available_width() / (4 - step) as f32 - 6.0).max(10.0);
                         let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 3.0), egui::Sense::hover());
-                        ui.painter().rect_filled(rect, 2.0, if step <= self.onboarding_step { ACCENT } else { border() });
+                        ui.painter().rect_filled(rect, UI_RADIUS, if step <= self.onboarding_step { ACCENT } else { border() });
                     }
                 });
                 ui.add_space(22.0);
-                egui::ScrollArea::vertical().id_salt("setup-content").max_height((ctx.screen_rect().height() - 270.0).max(180.0)).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("setup-content").max_height((ctx.screen_rect().height() - 270.0).max(180.0)).show_scoped(ui, |ui| {
                     ui.set_min_height(260.0);
                     match self.onboarding_step {
                         0 => {
@@ -52,7 +53,7 @@ impl Launcher {
                         1 => {
                             ui.label(tr("Choose where to keep your creative projects."));
                             ui.add_space(16.0);
-                            egui::Frame::new().fill(panel()).corner_radius(12).inner_margin(16).show(ui, |ui| {
+                            egui::Frame::new().fill(panel()).corner_radius(UI_RADIUS).inner_margin(16).show(ui, |ui| {
                                 ui.set_width(ui.available_width());
                                 ui.label(RichText::new(tr("Project folder")).strong());
                                 let path = self.prefs.default_project_root.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| tr("No folder selected"));
@@ -99,7 +100,7 @@ impl Launcher {
                             ui.label(tr("Use your provider’s desktop app to sign in, then choose its sync folder. This step is optional."));
                             ui.add_space(14.0);
                             for provider in cloud::PROVIDERS {
-                                egui::Frame::new().fill(panel()).corner_radius(10).inner_margin(12).show(ui, |ui| {
+                                egui::Frame::new().fill(panel()).corner_radius(UI_RADIUS).inner_margin(12).show(ui, |ui| {
                                     ui.set_width(ui.available_width());
                                     ui.horizontal(|ui| {
                                         ui.vertical(|ui| {

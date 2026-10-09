@@ -1,11 +1,11 @@
 //! Curated summaries of upstream capabilities. Versions always come from AppState.
 // Reviewed 2026-10-09: getartcraft.com/apps/{app}; github.com/storytold/{app}.
-pub(super) struct Profile {
+pub(crate) struct Profile {
     pub summary: &'static str,
     pub website: &'static str,
     pub platforms: &'static str,
 }
-pub(super) fn for_app(id: &str) -> Profile {
+pub(crate) fn for_app(id: &str) -> Profile {
     match id {
         "photocraft" => Profile {
             summary: "Edit layered images with local selection tools and flexible color controls.",

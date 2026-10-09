@@ -4,7 +4,7 @@ fn dialog_frame() -> egui::Frame {
     egui::Frame::new()
         .fill(panel())
         .stroke(egui::Stroke::new(1.0_f32, border()))
-        .corner_radius(14)
+        .corner_radius(UI_RADIUS)
         .inner_margin(28)
 }
 fn dialog_heading(ui: &mut egui::Ui, title: &str, description: &str, destructive: bool) {
@@ -17,7 +17,7 @@ fn dialog_heading(ui: &mut egui::Ui, title: &str, description: &str, destructive
             ACCENT
         };
         ui.painter()
-            .rect_filled(rect, 12.0, color.gamma_multiply(0.14));
+            .rect_filled(rect, UI_RADIUS, color.gamma_multiply(0.14));
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -45,7 +45,7 @@ fn file_summary(ui: &mut egui::Ui, name: &str, path: &Path) {
     egui::Frame::new()
         .fill(ink())
         .stroke(egui::Stroke::new(1.0_f32, border()))
-        .corner_radius(8)
+        .corner_radius(UI_RADIUS)
         .inner_margin(16)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -61,6 +61,7 @@ fn file_summary(ui: &mut egui::Ui, name: &str, path: &Path) {
 }
 impl Launcher {
     pub(super) fn project_dialogs(&mut self, ctx: &egui::Context) {
+        if self.active_theme == UiTheme::V2 { self.v2_project_dialogs(ctx); return; }
         if let Some(id) = self.show_remove.clone() {
             if let Some(app) = app_by_id(&id) {
                 let mut cancel = false;

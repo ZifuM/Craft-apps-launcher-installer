@@ -3,6 +3,11 @@
 #[cfg(target_os = "windows")]
 mod windows_tray;
 mod windows_ui;
+mod window_state;
+mod project_move;
+mod ui_themes;
+mod ui_v2;
+use ui_themes::UiTheme;
 
 mod project_preview;
 #[path = "windows_suite_update.rs"]
@@ -51,6 +56,10 @@ use std::{
 };
 use walkdir::WalkDir;
 
+// One radius for every rounded interface surface, in logical pixels.
+const UI_RADIUS: u8 = 10;
+const SPLASH_SIZE: Vec2 = Vec2::new(700.0, 500.0);
+
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPO: &str = "https://github.com/storytold";
 const ACCENT: Color32 = Color32::from_rgb(130, 99, 255);
@@ -58,7 +67,7 @@ const ACCENT: Color32 = Color32::from_rgb(130, 99, 255);
 // Keep the collection implementation available while its navigation is hidden.
 const SHOW_YOUR_APPS: bool = false;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Page {
     Cloud,
     Home,
@@ -222,6 +231,7 @@ const APPS: &[AppInfo] = &[
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
+    ui_theme: UiTheme,
     onboarding_complete: bool,
     language: String,
     automatic_updates: bool,
@@ -256,6 +266,7 @@ struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            ui_theme: UiTheme::default(),
             onboarding_complete: false,
             language: "en".into(),
             automatic_updates: true, automatic_suite_updates: true, beta_suite_updates: false, update_interval_hours: 4,
@@ -309,6 +320,7 @@ struct AppState {
     busy: Option<String>,
     error: Option<String>,
     icon: Option<egui::TextureHandle>,
+    icon_background: Option<Color32>,
 }
 
 #[derive(Clone)]
@@ -330,12 +342,15 @@ enum Event {
     ReleaseChecksComplete(Vec<(String, Result<String, String>)>),
     ManualRelease(String, Result<String, String>),
     Progress(String, String),
-    Logo(String, egui::TextureHandle),
+    Logo(String, egui::TextureHandle, Color32),
     Done(String, Result<String, String>),
     Scan(Vec<Project>),
 }
 
 struct Launcher {
+    active_theme: UiTheme,
+    v2_category: u8,
+    folder_move: Option<project_move::Dialog>,
     plugins: plugins::Manager,
     onboarding_step: usize,
     onboarding_error: Option<String>,
@@ -351,9 +366,11 @@ struct Launcher {
     tray_open_requested: bool,
     tray_quit_requested: bool,
     applied_light_mode: Option<bool>,
+    applied_reduce_motion: Option<bool>,
     page: Page,
     detail_parent: Page,
     settings_tab: usize,
+    settings_open: bool,
     your_apps_search: String,
     manager_search: String,
     collection_group: u8,
@@ -400,6 +417,7 @@ struct Launcher {
     startup_splash_window_shown: bool,
     startup_splash_finished: bool,
     startup_splash_centered: bool,
+    window_state: window_state::Memory,
     window_rounding_applied: bool,
     sidebar_collapsed: bool,
     orbit_apps: Vec<&'static AppInfo>,
@@ -417,13 +435,13 @@ impl Launcher {
         style.visuals.widgets.noninteractive.bg_fill = panel();
         style.visuals.widgets.inactive.bg_fill = theme_rgb(39, 41, 48);
         style.visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, border());
-        style.visuals.widgets.inactive.corner_radius = 8.into();
+        style.visuals.widgets.inactive.corner_radius = UI_RADIUS.into();
         style.visuals.widgets.hovered.bg_fill = theme_rgb(50, 51, 61);
         style.visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, theme_rgb(102, 87, 160));
-        style.visuals.widgets.hovered.corner_radius = 8.into();
+        style.visuals.widgets.hovered.corner_radius = UI_RADIUS.into();
         style.visuals.widgets.active.bg_fill = theme_rgb(79, 62, 132);
         style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
-        style.visuals.widgets.active.corner_radius = 8.into();
+        style.visuals.widgets.active.corner_radius = UI_RADIUS.into();
         style.visuals.selection.bg_fill = ACCENT;
         style.interaction.selectable_labels = false;
         style.spacing.item_spacing = Vec2::new(10.0, 10.0);
@@ -446,6 +464,7 @@ impl Launcher {
             egui::TextureOptions::LINEAR,
         );
         let mut prefs = read_preferences();
+        ui_themes::set_active(prefs.ui_theme);
         localization::select(&prefs.language);
         windows_ui::set_text_scale(prefs.text_scale);
         localization::install_fonts(&cc.egui_ctx);
@@ -456,11 +475,6 @@ impl Launcher {
         {
             prefs.default_project_root = prefs.roots.first().cloned();
             save_preferences(&prefs);
-        }
-        for root in &prefs.roots {
-            for app in APPS {
-                let _ = workspace_bridge::prepare(root, app);
-            }
         }
         let mut states = HashMap::new();
         for app in APPS {
@@ -478,6 +492,8 @@ impl Launcher {
             );
         }
         let mut launcher = Self {
+            active_theme: prefs.ui_theme,
+            v2_category: 0,
             #[cfg(target_os = "windows")]
             tray: None,
             #[cfg(target_os="linux")]
@@ -489,10 +505,12 @@ impl Launcher {
             tray_open_requested: false,
             tray_quit_requested: false,
             applied_light_mode: None,
+            applied_reduce_motion: None,
             orbit_apps: random_orbit_apps(None),
-            page: Page::Home,
+            page: if prefs.ui_theme == UiTheme::V2 { Page::Apps } else { Page::Home },
             detail_parent: Page::YourApps,
             settings_tab: 0,
+            settings_open: false,
             your_apps_search: String::new(),
             manager_search: String::new(),
             collection_group: 0,
@@ -535,6 +553,7 @@ impl Launcher {
             last_preview_check: Instant::now(),
             preview_check_busy: false,
             manual_update_check: None,
+            folder_move: None,
             plugins: plugins::Manager::default(),
             onboarding_step: 0,
             onboarding_error: None,
@@ -544,8 +563,13 @@ impl Launcher {
             startup_splash_window_shown: false,
             startup_splash_finished: false,
             startup_splash_centered: false,
+            window_state: window_state::Memory::load(),
             window_rounding_applied: false,
         };
+        launcher.recover_folder_move();
+        for root in &launcher.prefs.roots {
+            for app in APPS { let _ = workspace_bridge::prepare(root, app); }
+        }
         launcher.scan_projects();
         launcher
     }
@@ -613,6 +637,7 @@ impl Launcher {
     }
 
     fn draw_manual_update_dialog(&mut self, ctx: &egui::Context) {
+        if self.active_theme == UiTheme::V2 { self.v2_update_dialog(ctx); return; }
         let Some(check) = self.manual_update_check.clone() else { return; };
         let Some(app) = app_by_id(&check.app_id).copied() else { return; };
         let installed = self.states.get(app.id).and_then(|state| state.installed.as_deref()).is_some();
@@ -628,7 +653,7 @@ impl Launcher {
             .title_bar(false)
             .default_width(440.0)
             .open(&mut open)
-            .frame(egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(16).inner_margin(22))
+            .frame(egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(22))
             .show(ctx, |ui| {
                 ui.set_min_width(350.0);
                 ui.horizontal(|ui| {
@@ -717,6 +742,16 @@ impl Launcher {
                 if let Ok(bytes) = result {
                     if let Ok(image) = image::load_from_memory(&bytes) {
                         let image = image.to_rgba8();
+                        let mut colors = HashMap::<[u8; 3], usize>::new();
+                        let edge = (image.width().min(image.height()) / 8).max(1);
+                        for (x, y, pixel) in image.enumerate_pixels() {
+                            if pixel[3] == 255 && (x < edge || y < edge || x + edge >= image.width() || y + edge >= image.height()) {
+                                *colors.entry([pixel[0], pixel[1], pixel[2]]).or_default() += 1;
+                            }
+                        }
+                        let rgb = colors.into_iter().max_by_key(|(_, count)| *count)
+                            .map(|(rgb, _)| rgb).unwrap_or([app.tint.r(), app.tint.g(), app.tint.b()]);
+                        let background = Color32::from_rgb(rgb[0], rgb[1], rgb[2]);
                         let size = [image.width() as usize, image.height() as usize];
                         let color = egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw());
                         let handle = ctx.load_texture(
@@ -724,7 +759,7 @@ impl Launcher {
                             color,
                             egui::TextureOptions::LINEAR,
                         );
-                        let _ = tx.send(Event::Logo(id, handle));
+                        let _ = tx.send(Event::Logo(id, handle, background));
                         ctx.request_repaint();
                     }
                 }
@@ -877,7 +912,7 @@ impl Launcher {
             .backdrop_color(Color32::from_black_alpha(205))
             .frame(egui::Frame::new().fill(Color32::TRANSPARENT).inner_margin(0))
             .show(ctx, |ui| {
-                let (card, _) = ui.allocate_exact_size(Vec2::new(700.0, 420.0), egui::Sense::hover());
+                let (card, _) = ui.allocate_exact_size(SPLASH_SIZE, egui::Sense::hover());
                 paint_suite_splash(&ui.painter_at(card), card, app.tint, selected_icon,
                     app.name, &app.category.to_uppercase(), &format!("{}\nis getting ready.", app.name),
                     app.blurb, &app_icons, progress, self.prefs.reduce_motion);
@@ -913,7 +948,24 @@ impl Launcher {
         });
     }
 
+    fn open_cloud(&mut self) {
+        if self.active_theme == UiTheme::V2 {
+            self.settings_tab = 8;
+            self.settings_open = true;
+        } else {
+            self.page = Page::Cloud;
+        }
+    }
+
+    fn restore_main_window(&mut self, ctx: &egui::Context) {
+        // Keep the animation borderless; restore the chosen theme's window chrome afterward.
+        ctx.send_viewport_cmd(egui::ViewportCommand::Decorations(self.active_theme == UiTheme::V2));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+        self.window_state.restore(ctx);
+    }
+
     fn draw_resize_handles(&self, ctx: &egui::Context) {
+        if self.active_theme == UiTheme::V2 { return; }
         if !self.startup_splash_finished || ctx.input(|i| i.viewport().maximized.unwrap_or(false)) { return; }
         let bounds = ctx.screen_rect();
         let edge = 6.0;
@@ -1098,9 +1150,10 @@ impl Launcher {
                         self.persistent_toast = Some(message);
                     }
                 }
-                Event::Logo(id, texture) => {
+                Event::Logo(id, texture, background) => {
                     if let Some(s) = self.states.get_mut(&id) {
                         s.icon = Some(texture);
+                        s.icon_background = Some(background);
                     }
                 }
                 Event::Progress(id, state) => {
@@ -1177,7 +1230,7 @@ impl Launcher {
                     let toggle_size = if self.sidebar_collapsed { 20.0 } else { 28.0 };
                     let (toggle_rect, toggle_response) = ui.allocate_exact_size(Vec2::splat(toggle_size), egui::Sense::click());
                     let toggle_response = toggle_response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(if self.sidebar_collapsed { "Expand sidebar" } else { "Collapse sidebar" }));
-                    if toggle_response.hovered() { ui.painter().rect_filled(toggle_rect, 6.0, theme_rgb(39, 41, 48)); }
+                    if toggle_response.hovered() { ui.painter().rect_filled(toggle_rect, UI_RADIUS, theme_rgb(39, 41, 48)); }
                     let center = toggle_rect.center();
                     let direction = if self.sidebar_collapsed { 1.0 } else { -1.0 };
                     let stroke = egui::Stroke::new(1.4_f32, muted());
@@ -1211,23 +1264,7 @@ impl Launcher {
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     self.side_link(ui, Page::Cloud, "Cloud", None);
                     self.side_link(ui, Page::Settings, "Settings", None);
-                    ui.add_space(12.0);
-                    ui.separator();
-                    if self.sidebar_collapsed {
-                        let (status_rect, status_response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), egui::Sense::hover());
-                        status_response.on_hover_text(tr("Local to this device"));
-                        ui.painter().circle_filled(status_rect.center(), 3.5, theme_rgb(89, 204, 135));
-                        return;
-                    }
-                    ui.horizontal(|ui| {
-                        let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
-                        ui.painter().circle_filled(dot.center(), 3.0, theme_rgb(89, 204, 135));
-                        ui.label(
-                            RichText::new(tr("Local to this device"))
-                                .size(text_size(11.0))
-                                .color(muted()),
-                        );
-                    });
+
                 });
             });
     }
@@ -1250,7 +1287,7 @@ impl Launcher {
             let selected_t = ui.ctx().animate_bool(response.id.with("selected"), selected);
             let hover_t = ui.ctx().animate_bool(response.id.with("hover"), response.hovered());
             let fill = mix_color(mix_color(theme_rgb(22, 23, 27), theme_rgb(34, 35, 41), hover_t * 0.72), theme_rgb(47, 42, 68), selected_t);
-            ui.painter().rect_filled(rect, 9.0, fill);
+            ui.painter().rect_filled(rect, UI_RADIUS, fill);
             let icon_rect = egui::Rect::from_center_size(rect.center(), Vec2::splat(18.0));
             paint_navigation_icon(&ui.painter(), icon_rect, page, mix_color(muted(), ACCENT, selected_t));
             if response.clicked() { self.page = page; }
@@ -1265,7 +1302,7 @@ impl Launcher {
         let selected_t = ui.ctx().animate_bool(response.id.with("selected"), selected);
         let rest = mix_color(theme_rgb(22, 23, 27), theme_rgb(34, 35, 41), hover_t * 0.72);
         let fill = mix_color(rest, theme_rgb(47, 42, 68), selected_t);
-        ui.painter().rect_filled(rect, 9.0, fill);
+        ui.painter().rect_filled(rect, UI_RADIUS, fill);
         let mut row = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(rect.shrink2(Vec2::new(11.0, 0.0)))
@@ -1299,7 +1336,7 @@ impl Launcher {
         } else {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), egui::Sense::hover());
             ui.painter()
-                .rect_filled(rect, 12, app.tint.gamma_multiply(0.18));
+                .rect_filled(rect, UI_RADIUS, app.tint.gamma_multiply(0.18));
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,tr(app.name.chars().next().unwrap_or('?')),
@@ -1312,7 +1349,7 @@ impl Launcher {
     fn project_thumbnail_at(&mut self, ui: &mut egui::Ui, project: &Project, size: Vec2) {
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
         response.on_hover_text(tr(project.preview_note));
-        ui.painter().rect_filled(rect, 7.0, card());
+        ui.painter().rect_filled(rect, UI_RADIUS, card());
         if let Some(preview) = project.preview.as_ref() {
             let texture = self.project_previews.entry(project.path.clone()).or_insert_with(|| {
                 let image = egui::ColorImage::from_rgba_unmultiplied(
@@ -1338,7 +1375,7 @@ impl Launcher {
             );
             ui.painter().rect_stroke(
                 rect,
-                7.0,
+                UI_RADIUS,
                 egui::Stroke::new(1.0_f32, border()),
                 egui::StrokeKind::Inside,
             );
@@ -1372,7 +1409,7 @@ impl Launcher {
         egui::Frame::new()
             .fill(mix_color(card(), app.tint, 0.12))
             .stroke(egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.28)))
-            .corner_radius(16)
+            .corner_radius(UI_RADIUS)
             .inner_margin(17)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -1490,7 +1527,7 @@ impl Launcher {
     fn classic_your_apps_page(&mut self, ui: &mut egui::Ui) {
         self.heading(ui, "YOUR COLLECTION", "Your apps", "Choose an app to open its workspace, manage updates, and pick up your projects.");
         ui.horizontal(|ui| {
-            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(9).inner_margin(10).show(ui, |ui| {
+            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(10).show(ui, |ui| {
                 ui.add(egui::TextEdit::singleline(&mut self.your_apps_search).hint_text(tr("Find an installed app...")).desired_width(260.0).frame(false));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1508,7 +1545,7 @@ impl Launcher {
         let query = self.your_apps_search.to_lowercase();
         let apps: Vec<_> = installed.into_iter().filter(|a| format!("{} {}", a.name, a.category).to_lowercase().contains(&query)).collect();
         if apps.is_empty() { ui.label(RichText::new(tr("No apps match your search.")).color(muted())); }
-        egui::ScrollArea::vertical().id_salt("your-apps-library").show(ui, |ui| {
+        page_scroll(ui, "your-apps-library", |ui| {
             for (group, label) in [(AppGroup::Creative, "Creative apps"), (AppGroup::Office, "Productivity apps")] {
                 let group_apps: Vec<_> = apps.iter().filter(|a| a.group == group).collect();
                 if group_apps.is_empty() { continue; }
@@ -1525,13 +1562,13 @@ impl Launcher {
                             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, app.name));
                             let hover = if self.prefs.reduce_motion { if response.hovered() { 1.0 } else { 0.0 } } else { ui.ctx().animate_bool(response.id, response.hovered()) };
                             let painter = ui.painter_at(rect);
-                            painter.rect_filled(rect, 14.0, mix_color(card(), app.tint, 0.10 + hover * 0.09));
-                            painter.rect_stroke(rect, 14.0, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.25 + hover * 0.40)), egui::StrokeKind::Inside);
+                            painter.rect_filled(rect, UI_RADIUS, mix_color(card(), app.tint, 0.10 + hover * 0.09));
+                            painter.rect_stroke(rect, UI_RADIUS, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.25 + hover * 0.40)), egui::StrokeKind::Inside);
                             let logo = egui::Rect::from_min_size(rect.min + Vec2::splat(20.0), Vec2::splat(46.0));
                             if let Some(texture) = self.states.get(app.id).and_then(|s| s.icon.as_ref()) {
                                 painter.image(texture.id(), logo, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                             } else {
-                                painter.rect_filled(logo, 10.0, app.tint);
+                                painter.rect_filled(logo, UI_RADIUS, app.tint);
                                 painter.text(logo.center(), egui::Align2::CENTER_CENTER,tr(&app.name[..1]), egui::FontId::proportional(text_size(22.0)), foreground());
                             }
                             painter.text(rect.min + Vec2::new(80.0, 31.0), egui::Align2::LEFT_CENTER,tr(app.name), egui::FontId::proportional(text_size(18.0)), foreground());
@@ -1565,7 +1602,7 @@ impl Launcher {
             for (group, label) in [(AppGroup::Creative, "Creative Apps"), (AppGroup::Office, "Productivity Apps")] {
                 let selected = self.app_category == group;
                 let color = if selected { Color32::WHITE } else { muted() };
-                if ui.add(egui::Button::new(RichText::new(tr(label)).size(text_size(13.0)).strong().color(color)).fill(if selected { ACCENT } else { panel() }).stroke(egui::Stroke::new(1.0_f32, if selected { ACCENT } else { border() })).corner_radius(9).min_size(Vec2::new(150.0, 38.0))).clicked() {
+                if ui.add(egui::Button::new(RichText::new(tr(label)).size(text_size(13.0)).strong().color(color)).fill(if selected { ACCENT } else { panel() }).stroke(egui::Stroke::new(1.0_f32, if selected { ACCENT } else { border() })).corner_radius(UI_RADIUS).min_size(Vec2::new(150.0, 38.0))).clicked() {
                     self.app_category = group;
                     self.filter = "All apps".into();
                 }
@@ -1603,13 +1640,13 @@ impl Launcher {
             })
             .collect();
         if filtered.is_empty() {
-            egui::Frame::new().fill(panel()).corner_radius(14).inner_margin(24).show(ui, |ui| {
+            egui::Frame::new().fill(panel()).corner_radius(UI_RADIUS).inner_margin(24).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.label(RichText::new(tr(if self.filter == "Available updates" { "No updates listed" } else { "No installed apps in this category" })).size(text_size(18.0)).strong());
                 ui.label(RichText::new(tr("Choose All apps to explore the collection, or check for new releases.")).color(muted()));
             });
         }
-        egui::ScrollArea::vertical().show(ui, |ui| {
+        page_scroll(ui, "classic-app-manager", |ui| {
             let available = ui.available_width();
             let columns = if available > 1040.0 {
                 3
@@ -1658,7 +1695,7 @@ impl Launcher {
         egui::Frame::new()
             .fill(mix_color(card(), app.tint, 0.18))
             .stroke(egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.55)))
-            .corner_radius(16)
+            .corner_radius(UI_RADIUS)
             .inner_margin(22)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1763,7 +1800,7 @@ impl Launcher {
         ui.add_space(8.0);
         let recent: Vec<Project> = self.projects.iter().filter(|p| p.app.id == app.id).take(5).cloned().collect();
         if recent.is_empty() {
-            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(12).inner_margin(18).show(ui, |ui| {
+            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(18).show(ui, |ui| {
                 ui.label(RichText::new(tr(format!("No {} projects found yet.", app.name))).color(muted()));
                 if ui.button(tr("Choose project folders")).clicked() {
                     self.page = Page::Projects;
@@ -1779,7 +1816,7 @@ impl Launcher {
     }
 
     fn empty_projects(&mut self, ui: &mut egui::Ui) {
-        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(26).show(ui, |ui| {
+        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(26).show(ui, |ui| {
             ui.vertical_centered(|ui| {
                 let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
                 paint_navigation_icon(&ui.painter(), icon_rect, Page::Projects, ACCENT);
@@ -1792,7 +1829,7 @@ impl Launcher {
     }
 
     fn project_rows(&mut self, ui: &mut egui::Ui, projects: Vec<Project>) {
-        egui::ScrollArea::vertical().show(ui, |ui| self.project_gallery(ui, projects));
+        page_scroll(ui, "project-library", |ui| self.project_gallery(ui, projects));
     }
 
     fn project_view_controls(&mut self, ui: &mut egui::Ui) {
@@ -1851,12 +1888,19 @@ impl Launcher {
 }
 
 impl eframe::App for Launcher {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.window_state.flush();
+    }
+
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        if self.applied_light_mode != Some(self.prefs.light_mode) {
+        if self.applied_light_mode != Some(self.prefs.light_mode)
+            || self.applied_reduce_motion != Some(self.prefs.reduce_motion) {
             apply_theme(ctx, self.prefs.light_mode);
+            ctx.style_mut(|style| style.animation_time = if self.prefs.reduce_motion { 0.0 } else { 0.16 });
             self.applied_light_mode = Some(self.prefs.light_mode);
+            self.applied_reduce_motion = Some(self.prefs.reduce_motion);
         }
-        update_scrollbar_visibility(ctx);
+        if self.startup_splash_finished { self.window_state.observe(ctx); }
         #[cfg(target_os = "windows")]
         {
             let needs_tray = self.prefs.minimize_to_tray || self.prefs.start_with_windows;
@@ -1872,8 +1916,7 @@ impl eframe::App for Launcher {
                 self.silent_start = false;
                 self.startup_splash_finished = true;
                 self.startup_splash_initialized = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1240.0, 800.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(920.0, 640.0)));
+                self.restore_main_window(ctx);
                 // Never hide the only window unless Windows has accepted the tray icon.
                 if self.tray.is_none() { ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true)); }
             }
@@ -1887,8 +1930,7 @@ impl eframe::App for Launcher {
             if !needed{if self.linux_tray.take().is_some(){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));}}
             if self.silent_start{
                 self.silent_start=false;self.startup_splash_finished=true;self.startup_splash_initialized=true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1240.0,800.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(920.0,640.0)));
+                self.restore_main_window(ctx);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.linux_tray.is_none()));
             }
             if self.prefs.minimize_to_tray&&self.linux_tray.is_some()&&ctx.input(|i|i.viewport().minimized==Some(true)){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));}
@@ -1900,8 +1942,7 @@ impl eframe::App for Launcher {
             if !needed&&self.mac_tray.take().is_some(){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));}
             if self.silent_start{
                 self.silent_start=false;self.startup_splash_finished=true;self.startup_splash_initialized=true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1240.0,800.0)));
-                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(920.0,640.0)));
+                self.restore_main_window(ctx);
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.mac_tray.is_none()));
             }
             if self.prefs.minimize_to_tray&&self.mac_tray.is_some()&&ctx.input(|i|i.viewport().minimized==Some(true)){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));}
@@ -1916,6 +1957,16 @@ impl eframe::App for Launcher {
             self.startup_splash_initialized = true;
         }
         self.process_events();
+        self.poll_folder_move();
+        if self.folder_move.as_ref().is_some_and(|move_| move_.running()) {
+            if ctx.input(|i| i.viewport().close_requested()) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            }
+            egui::CentralPanel::default().frame(egui::Frame::new().fill(ink())).show(ctx, |_| {});
+            self.folder_move_dialog(ctx);
+            ctx.request_repaint_after(Duration::from_millis(100));
+            return;
+        }
         if self.tray_quit_requested {
             #[cfg(target_os = "windows")]
             { self.tray = None; }
@@ -1932,7 +1983,7 @@ impl eframe::App for Launcher {
         let suite_can_restart = self.prefs.onboarding_complete && self.startup_splash_finished && self.pending_launch.is_none()
             && self.show_project_rename.is_none() && self.show_project_delete.is_none() && self.show_remove.is_none()
             && !self.prefs.scanning && self.states.values().all(|state| state.busy.is_none());
-        let suite_can_restart = suite_can_restart && self.properties.is_none();
+        let suite_can_restart = suite_can_restart && self.properties.is_none() && !self.settings_open;
         if let Some((_, ready_at)) = self.suite_update_ready.as_mut() {
             if !suite_can_restart || !self.prefs.automatic_suite_updates { *ready_at = Instant::now(); }
         }
@@ -1963,7 +2014,7 @@ impl eframe::App for Launcher {
             self.scan_projects();
         }
         self.load_logos(ctx);
-        if self.startup_splash_finished {
+        if self.startup_splash_finished && self.active_theme == UiTheme::Legacy {
         egui::TopBottomPanel::top("custom_titlebar").exact_height(42.0).show_separator_line(false).frame(egui::Frame::new().fill(theme_rgb(25, 25, 30)).inner_margin(egui::Margin::symmetric(12, 4))).show(ctx, |ui| {
             let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), egui::Sense::hover());
             let icon_rect = egui::Rect::from_min_size(bar.left_center() + Vec2::new(0.0, -11.0), Vec2::splat(22.0));
@@ -1971,7 +2022,7 @@ impl eframe::App for Launcher {
             let title_rect = ui.painter().text(icon_rect.right_center() + Vec2::new(10.0, 0.0), egui::Align2::LEFT_CENTER,tr("ArtCraft Master Suite"), egui::FontId::proportional(text_size(12.0)), theme_rgb(222, 223, 228));
             let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
             let beta = egui::Rect::from_min_size(egui::pos2(title_rect.right() + 10.0, bar.center().y - 10.5), Vec2::new(48.0, 21.0));
-            ui.painter().rect_filled(beta, 6.0, mix_color(panel(), ACCENT, 0.18));
+            ui.painter().rect_filled(beta, UI_RADIUS, mix_color(panel(), ACCENT, 0.18));
             ui.painter().text(beta.center(), egui::Align2::CENTER_CENTER, tr("Beta"), egui::FontId::proportional(text_size(10.0)), readable_app_color(ACCENT));
             let controls_width = 138.0;
             let drag_rect = egui::Rect::from_min_max(bar.left_top(), egui::pos2(bar.right() - controls_width, bar.bottom()));
@@ -1987,7 +2038,7 @@ impl eframe::App for Launcher {
             for (idx, command) in [0_u8, 1_u8, 2_u8].into_iter().enumerate() {
                 let rect = egui::Rect::from_min_size(egui::pos2(start + idx as f32 * 46.0, bar.top()), Vec2::new(46.0, 34.0));
                 let response = ui.interact(rect, egui::Id::new(("window-control", idx)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
-                if response.hovered() { ui.painter().rect_filled(rect.shrink2(Vec2::new(2.0, 1.0)), 7.0, if command == 2 { theme_rgb(177, 58, 67) } else { theme_rgb(49, 50, 58) }); }
+                if response.hovered() { ui.painter().rect_filled(rect.shrink2(Vec2::new(2.0, 1.0)), UI_RADIUS, if command == 2 { theme_rgb(177, 58, 67) } else { theme_rgb(49, 50, 58) }); }
                 let c = rect.center();
                 let stroke = egui::Stroke::new(1.4_f32, theme_rgb(220, 221, 226));
                 match command {
@@ -2020,8 +2071,7 @@ impl eframe::App for Launcher {
                 return;
             }
             self.startup_splash_finished = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1240.0, 800.0)));
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(920.0, 640.0)));
+            self.restore_main_window(ctx);
             ctx.request_repaint_after(Duration::from_millis(16));
             return;
         }
@@ -2038,6 +2088,9 @@ impl eframe::App for Launcher {
         }
         let transition_t = if self.prefs.reduce_motion { 1.0 } else { (self.page_transition_started.elapsed().as_secs_f32() / 0.24).clamp(0.0, 1.0) };
         let transition_ease = transition_t * transition_t * (3.0 - 2.0 * transition_t);
+        if self.active_theme == UiTheme::V2 {
+            self.v2_ui(ctx);
+        } else {
         if self.prefs.classic_sidebar { self.classic_sidebar(ctx); } else { self.modern_sidebar(ctx); }
         egui::CentralPanel::default()
             .frame(
@@ -2058,13 +2111,13 @@ impl eframe::App for Launcher {
                         let ui=&mut content_ui;
                         match self.page {
                             Page::Home => self.home(ui),
-                            Page::Cloud => { egui::ScrollArea::vertical().id_salt("cloud-page").show(ui, |ui| self.cloud_page(ui)); },
+                            Page::Cloud => { page_scroll(ui, "cloud-page", |ui| self.cloud_page(ui)); },
                             Page::Apps => self.apps_page(ui),
                             Page::YourApps => self.your_apps_page(ui),
                             Page::Projects => self.projects_page(ui),
-                            Page::Settings => { egui::ScrollArea::vertical().id_salt("settings-scroll").show(ui, |ui| { ui.set_width(ui.available_width().min(980.0)); self.settings_page(ui); }); },
+                            Page::Settings => { page_scroll(ui, "settings-scroll", |ui| { ui.set_width(ui.available_width().min(980.0)); self.settings_page(ui); }); },
                             Page::App(id) => {
-                                egui::ScrollArea::vertical().id_salt(("app-workspace",id)).show(ui, |ui| self.app_detail(ui, id));
+                                page_scroll(ui, ("app-workspace",id), |ui| self.app_detail(ui, id));
                             }
                         }
                     });
@@ -2073,6 +2126,7 @@ impl eframe::App for Launcher {
                     }
                 }
             });
+        }
         self.plugins.tick();
         self.cloud.tick(&self.projects);
         if !self.prefs.onboarding_complete {
@@ -2080,8 +2134,10 @@ impl eframe::App for Launcher {
             ctx.request_repaint_after(Duration::from_millis(200));
             return;
         }
+        if self.active_theme == UiTheme::V2 { self.v2_settings_dialog(ctx); }
         self.properties_dialog(ctx);
         self.project_dialogs(ctx);
+        self.folder_move_dialog(ctx);
         if self.toast != self.toast_last_message {
             self.toast_last_message = self.toast.clone();
             self.toast_started = self.toast.as_ref().map(|_| Instant::now());
@@ -2094,6 +2150,7 @@ impl eframe::App for Launcher {
             self.persistent_toast = None;
         }
         if let Some(message) = self.toast.clone() {
+            if self.active_theme == UiTheme::V2 { self.v2_notification(ctx, &message); } else {
             let is_update = toast_is_persistent;
             let is_error = message.to_lowercase().contains("could not") || message.to_lowercase().contains("failed") || message.to_lowercase().contains("error");
             let accent = if is_update { ACCENT } else if is_error { theme_rgb(235, 105, 112) } else { theme_rgb(102, 205, 151) };
@@ -2105,7 +2162,7 @@ impl eframe::App for Launcher {
                     egui::Frame::new()
                         .fill(theme_rgb(31, 33, 40))
                         .stroke(egui::Stroke::new(1.0_f32, mix_color(border(), accent, 0.65)))
-                        .corner_radius(13)
+                        .corner_radius(UI_RADIUS)
                         .shadow(egui::epaint::Shadow { offset: [0, 5], blur: 18, spread: 1, color: Color32::from_black_alpha(110) })
                         .inner_margin(egui::Margin::symmetric(14, 12))
                         .show(ui, |ui| {
@@ -2139,6 +2196,7 @@ impl eframe::App for Launcher {
                             });
                         });
                 });
+        }
         }
         self.draw_manual_update_dialog(ctx);
         self.draw_launch_splash(ctx);
@@ -2239,7 +2297,7 @@ fn icon_button_sized(
     let painter = ui.painter();
     painter.rect_filled(
         rect,
-        7.0,
+        UI_RADIUS,
         mix_color(Color32::TRANSPARENT, ui.visuals().widgets.hovered.bg_fill, hover_t),
     );
     let center = rect.center();
@@ -2348,7 +2406,7 @@ fn icon_toggle_button(ui: &mut egui::Ui, icon: ButtonIcon, tooltip: &str, select
     let tint = if selected { foreground() } else { muted() };
     let response = icon_button(ui, icon, tooltip, tint);
     if selected {
-        ui.painter().rect_stroke(response.rect, 7.0, egui::Stroke::new(1.0_f32, ACCENT), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(response.rect, UI_RADIUS, egui::Stroke::new(1.0_f32, ACCENT), egui::StrokeKind::Inside);
     }
     response
 }
@@ -2386,10 +2444,10 @@ fn polished_button(ui: &mut egui::Ui, text: &str, base: Color32, hover: Color32,
     let fill = mix_color(base, hover, hover_t);
     let painter = ui.painter();
     if !down {
-        painter.rect_filled(rect.translate(Vec2::new(0.0, 2.0)), 9.0, Color32::from_black_alpha(34));
+        painter.rect_filled(rect.translate(Vec2::new(0.0, 2.0)), UI_RADIUS, Color32::from_black_alpha(34));
     }
-    painter.rect_filled(rect.translate(if down { Vec2::new(0.0, 1.0) } else { Vec2::ZERO }), 9.0, fill);
-    painter.rect_stroke(rect, 9.0, egui::Stroke::new(1.0_f32, mix_color(base, Color32::WHITE, hover_t * 0.28)), egui::StrokeKind::Inside);
+    painter.rect_filled(rect.translate(if down { Vec2::new(0.0, 1.0) } else { Vec2::ZERO }), UI_RADIUS, fill);
+    painter.rect_stroke(rect, UI_RADIUS, egui::Stroke::new(1.0_f32, mix_color(base, Color32::WHITE, hover_t * 0.28)), egui::StrokeKind::Inside);
     let text_pos = rect.center() - galley.size() * 0.5 + if down { Vec2::new(0.0, 1.0) } else { Vec2::ZERO };
     painter.galley(text_pos, galley, text_color);
     response
@@ -2769,18 +2827,24 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_decorations(false)
-            .with_resizable(true)
+            .with_resizable(false)
             .with_visible(false)
             .with_title("ArtCraft Master Suite")
             .with_icon(icon)
-            .with_inner_size([700.0, 420.0]),
+            .with_inner_size(SPLASH_SIZE),
         ..Default::default()
     };
-    eframe::run_native(
+    let result = eframe::run_native(
         "ArtCraft Master Suite",
         options,
         Box::new(|cc| Ok(Box::new(Launcher::new(cc)))),
-    )
+    );
+    #[cfg(target_os = "windows")]
+    drop(_instance);
+    if result.is_ok() && ui_themes::restart_requested() {
+        if let Err(error) = ui_themes::relaunch() { eprintln!("Could not restart Master Suite: {error}"); }
+    }
+    result
 }
 
 #[cfg(target_os = "windows")]
@@ -2803,7 +2867,7 @@ fn apply_window_rounding(frame: &eframe::Frame) {
 }
 
 fn settings_section(ui: &mut egui::Ui, title: &str, description: &str, content: impl FnOnce(&mut egui::Ui)) {
-    egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(20).show(ui, |ui| {
+    egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(20).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.label(RichText::new(tr(title)).size(text_size(17.0)).strong());
         ui.label(RichText::new(tr(description)).size(text_size(12.0)).color(muted()));
@@ -2828,7 +2892,7 @@ fn setting_toggle(ui: &mut egui::Ui, title: &str, description: &str, value: &mut
     let response = ui.interact(rect, ui.id().with(title), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(title);
     if response.clicked() { *value = !*value; }
     response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *value, title));
-    ui.painter().rect_filled(rect, 12.0, if *value { ACCENT } else { border() });
+    ui.painter().rect_filled(rect, UI_RADIUS, if *value { ACCENT } else { border() });
     let x = if *value { rect.right() - 12.0 } else { rect.left() + 12.0 };
     ui.painter().circle_filled(egui::pos2(x, rect.center().y), 8.0, Color32::WHITE);
 }
@@ -2879,8 +2943,8 @@ fn dashboard_metric(ui: &mut egui::Ui, label: &str, value: &str, caption: &str, 
     let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 112.0), egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{label}: {value}. {caption}")));
-    ui.painter().rect_filled(rect, 12.0, if response.hovered() { card() } else { panel() });
-    ui.painter().rect_stroke(rect, 12.0, egui::Stroke::new(1.0_f32, if response.hovered() { theme_rgb(78, 70, 103) } else { border() }), egui::StrokeKind::Inside);
+    ui.painter().rect_filled(rect, UI_RADIUS, if response.hovered() { card() } else { panel() });
+    ui.painter().rect_stroke(rect, UI_RADIUS, egui::Stroke::new(1.0_f32, if response.hovered() { theme_rgb(78, 70, 103) } else { border() }), egui::StrokeKind::Inside);
     ui.painter().text(rect.min + Vec2::new(18.0, 20.0), egui::Align2::LEFT_CENTER,tr(label), egui::FontId::proportional(text_size(10.0)), muted());
     ui.painter().text(rect.min + Vec2::new(18.0, 55.0), egui::Align2::LEFT_CENTER, value, egui::FontId::proportional(text_size(28.0)), foreground());
     ui.painter().text(rect.min + Vec2::new(18.0, 89.0), egui::Align2::LEFT_CENTER,tr(caption), egui::FontId::proportional(text_size(11.0)), muted());
@@ -2890,12 +2954,12 @@ fn dashboard_metric(ui: &mut egui::Ui, label: &str, value: &str, caption: &str, 
 
 static LIGHT_THEME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn light_theme() -> bool { LIGHT_THEME.load(std::sync::atomic::Ordering::Relaxed) }
-fn foreground() -> Color32 { if light_theme() { Color32::from_rgb(28, 34, 46) } else { Color32::WHITE } }
-fn ink() -> Color32 { if light_theme() { Color32::from_rgb(245, 246, 249) } else { Color32::from_rgb(15, 17, 22) } }
-fn panel() -> Color32 { if light_theme() { Color32::from_rgb(255, 255, 255) } else { Color32::from_rgb(23, 26, 33) } }
-fn card() -> Color32 { if light_theme() { Color32::from_rgb(235, 238, 244) } else { Color32::from_rgb(31, 35, 44) } }
-fn border() -> Color32 { if light_theme() { Color32::from_rgb(212, 218, 229) } else { Color32::from_rgb(46, 48, 56) } }
-fn muted() -> Color32 { if light_theme() { Color32::from_rgb(92, 101, 118) } else { Color32::from_rgb(163, 167, 178) } }
+fn foreground() -> Color32 { if ui_themes::is_v2() { return ui_v2::foreground(); } if light_theme() { Color32::from_rgb(28, 34, 46) } else { Color32::WHITE } }
+fn ink() -> Color32 { if ui_themes::is_v2() { return ui_v2::ink(); } if light_theme() { Color32::from_rgb(245, 246, 249) } else { Color32::from_rgb(15, 17, 22) } }
+fn panel() -> Color32 { if ui_themes::is_v2() { return ui_v2::panel(); } if light_theme() { Color32::from_rgb(255, 255, 255) } else { Color32::from_rgb(23, 26, 33) } }
+fn card() -> Color32 { if ui_themes::is_v2() { return ui_v2::card(); } if light_theme() { Color32::from_rgb(235, 238, 244) } else { Color32::from_rgb(31, 35, 44) } }
+fn border() -> Color32 { if ui_themes::is_v2() { return ui_v2::border(); } if light_theme() { Color32::from_rgb(212, 218, 229) } else { Color32::from_rgb(46, 48, 56) } }
+fn muted() -> Color32 { if ui_themes::is_v2() { return ui_v2::muted(); } if light_theme() { Color32::from_rgb(92, 101, 118) } else { Color32::from_rgb(163, 167, 178) } }
 
 // Keep hue in custom-painted neutral surfaces, while lifting their lightness.
 fn theme_rgb(r: u8, g: u8, b: u8) -> Color32 {
@@ -2913,6 +2977,13 @@ fn theme_rgb(r: u8, g: u8, b: u8) -> Color32 {
 fn apply_theme(ctx: &egui::Context, light: bool) {
     LIGHT_THEME.store(light, std::sync::atomic::Ordering::Relaxed);
     let mut style = (*ctx.style()).clone();
+    // Apply the saved app preference to both the content and the native title bar.
+    ctx.set_theme(if light { egui::Theme::Light } else { egui::Theme::Dark });
+    ctx.send_viewport_cmd(egui::ViewportCommand::SetTheme(if light {
+        egui::SystemTheme::Light
+    } else {
+        egui::SystemTheme::Dark
+    }));
     style.visuals = if light { egui::Visuals::light() } else { egui::Visuals::dark() };
     style.visuals.window_fill = panel(); style.visuals.panel_fill = ink();
     style.visuals.extreme_bg_color = ink(); style.visuals.faint_bg_color = panel();
@@ -2929,40 +3000,51 @@ fn apply_theme(ctx: &egui::Context, light: bool) {
     style.visuals.widgets.open.bg_fill = card();
     style.visuals.widgets.open.weak_bg_fill = theme_rgb(43, 46, 55);
     style.visuals.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
-    style.visuals.widgets.open.corner_radius = 8.into();
+    style.visuals.widgets.open.corner_radius = UI_RADIUS.into();
     style.visuals.selection.bg_fill = mix_color(panel(), ACCENT, if light { 0.22 } else { 0.5 });
-    for widget in [&mut style.visuals.widgets.inactive, &mut style.visuals.widgets.hovered, &mut style.visuals.widgets.active] { widget.corner_radius = 8.into(); }
+    for widget in [&mut style.visuals.widgets.inactive, &mut style.visuals.widgets.hovered, &mut style.visuals.widgets.active] { widget.corner_radius = UI_RADIUS.into(); }
     style.spacing.scroll = suite_scroll_style();
     windows_ui::refine_style(&mut style);
+    if ui_themes::is_v2() { ui_v2::refine_style(&mut style); }
     ctx.set_style(style);
 }
 
-// Keep the gutter stable; visibility is driven by scrolling, not pointer hover.
-fn update_scrollbar_visibility(ctx: &egui::Context) {
-    let id = egui::Id::new("suite-last-scroll");
-    let (now, scrolling, dragging) = ctx.input(|i| (
-        i.time,
-        i.raw_scroll_delta != Vec2::ZERO || i.smooth_scroll_delta != Vec2::ZERO
-            || [egui::Key::PageUp, egui::Key::PageDown, egui::Key::Home, egui::Key::End,
-                egui::Key::ArrowUp, egui::Key::ArrowDown].iter().any(|key| i.key_pressed(*key)),
-        i.pointer.primary_down() && i.pointer.delta() != Vec2::ZERO,
-    ));
-    let mut last = ctx.data(|data| data.get_temp::<f64>(id)).unwrap_or(-100.0);
-    if scrolling || dragging {
-        last = now;
-        ctx.data_mut(|data| data.insert_temp(id, last));
+// Each scroll area's timer follows its own offset, including keyboard and kinetic scrolling.
+// Scoped styling prevents a sibling sidebar, page or dialog from inheriting its visibility.
+trait SuiteScrollArea {
+    fn show_scoped<R>(self, ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui) -> R)
+        -> egui::scroll_area::ScrollAreaOutput<R>;
+}
+impl SuiteScrollArea for egui::ScrollArea {
+    #[track_caller]
+    fn show_scoped<R>(self, ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui) -> R)
+        -> egui::scroll_area::ScrollAreaOutput<R> {
+        let caller = std::panic::Location::caller();
+        let timer_id = ui.make_persistent_id(("scroll-activity", caller.file(), caller.line(), caller.column()));
+        ui.scope(|ui| {
+            let now = ui.input(|i| i.time);
+            let (mut last, previous) = ui.ctx().data(|d| d.get_temp::<(f64, Vec2)>(timer_id))
+                .unwrap_or((-100.0, Vec2::ZERO));
+            let visibility = (1.0 - ((now - last - 0.45) / 0.25).max(0.0)).clamp(0.0, 1.0) as f32;
+            let scroll = &mut ui.style_mut().spacing.scroll;
+            scroll.dormant_handle_opacity = 0.55 * visibility;
+            scroll.active_handle_opacity = 0.65 * visibility;
+            scroll.interact_handle_opacity = 0.9 * visibility;
+            scroll.dormant_background_opacity = 0.0;
+            scroll.active_background_opacity = 0.10 * visibility;
+            scroll.interact_background_opacity = 0.22 * visibility;
+            let wheel = ui.input(|i| i.raw_scroll_delta != Vec2::ZERO);
+            let output = self.show(ui, contents);
+            let over_area = ui.rect_contains_pointer(output.inner_rect);
+            if output.state.offset != previous || (over_area && wheel) {
+                last = now;
+                ui.ctx().request_repaint();
+            }
+            ui.ctx().data_mut(|d| d.insert_temp(timer_id, (last, output.state.offset)));
+            if visibility > 0.0 { ui.ctx().request_repaint_after(Duration::from_millis(16)); }
+            output
+        }).inner
     }
-    let visibility = (1.0 - ((now - last - 0.45) / 0.25).max(0.0)).clamp(0.0, 1.0) as f32;
-    ctx.style_mut(|style| {
-        let scroll = &mut style.spacing.scroll;
-        scroll.dormant_handle_opacity = 0.55 * visibility;
-        scroll.active_handle_opacity = 0.65 * visibility;
-        scroll.interact_handle_opacity = 0.9 * visibility;
-        scroll.dormant_background_opacity = 0.0;
-        scroll.active_background_opacity = 0.10 * visibility;
-        scroll.interact_background_opacity = 0.22 * visibility;
-    });
-    if visibility > 0.0 { ctx.request_repaint_after(Duration::from_millis(16)); }
 }
 
 fn suite_scroll_style() -> egui::style::ScrollStyle {
@@ -3011,32 +3093,39 @@ fn paint_suite_splash(
     let elapsed = progress * 3.0;
     let reveal = if reduce_motion { 1.0 } else { smooth(elapsed / 0.55) };
     let settled = smooth((progress-0.78)/0.22);
-    let dark = mix_color(Color32::from_rgb(24,20,39),tint,0.18);
+    let light = light_theme();
+    let left_fill = if light { Color32::from_rgb(250,250,252) } else { Color32::from_rgb(24,26,33) };
+    let title_color = if light { Color32::from_rgb(25,26,30) } else { Color32::from_rgb(238,240,245) };
+    let body_color = if light { Color32::from_rgb(91,94,101) } else { Color32::from_rgb(180,184,196) };
+    let quiet_color = if light { Color32::from_rgb(124,127,134) } else { Color32::from_rgb(153,158,173) };
+    let accent_color = if light { mix_color(tint,Color32::BLACK,0.22) } else { mix_color(tint,Color32::WHITE,0.24) };
+    let track_color = if light { Color32::from_rgb(226,226,231) } else { Color32::from_rgb(53,57,70) };
+    let dark = mix_color(if light { Color32::from_rgb(24,20,39) } else { Color32::from_rgb(16,18,26) },tint,if light {0.18}else{0.12});
     let left = egui::Rect::from_min_max(rect.min,egui::pos2(rect.left()+242.0,rect.bottom()));
-    painter.rect_filled(rect,18.0,dark);
-    painter.rect_filled(left,18.0,Color32::from_rgb(250,250,252));
-    painter.rect_filled(egui::Rect::from_min_max(left.left_top()+Vec2::new(18.0,0.0),left.right_bottom()),0.0,Color32::from_rgb(250,250,252));
-    painter.rect_stroke(rect,18.0,egui::Stroke::new(1.0_f32,mix_color(dark,tint,0.4)),egui::StrokeKind::Inside);
+    painter.rect_filled(rect,UI_RADIUS,dark);
+    painter.rect_filled(left,UI_RADIUS,left_fill);
+    painter.rect_filled(egui::Rect::from_min_max(left.left_top()+Vec2::new(18.0,0.0),left.right_bottom()),0.0,left_fill);
+    painter.rect_stroke(rect,UI_RADIUS,egui::Stroke::new(1.0_f32,mix_color(dark,tint,0.4)),egui::StrokeKind::Inside);
     let uv=egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0));
     let draw_mark = |p: &egui::Painter, mark: egui::Rect| {
         if let Some(texture)=logo {p.image(texture,mark,uv,Color32::WHITE);}
-        else {p.rect_filled(mark,10.0,tint);p.text(mark.center(),egui::Align2::CENTER_CENTER,tr(name.chars().next().unwrap_or('A')),egui::FontId::proportional(mark.height()*0.55),Color32::WHITE);}
+        else {p.rect_filled(mark,UI_RADIUS,tint);p.text(mark.center(),egui::Align2::CENTER_CENTER,tr(name.chars().next().unwrap_or('A')),egui::FontId::proportional(mark.height()*0.55),Color32::WHITE);}
     };
     draw_mark(painter,egui::Rect::from_min_size(left.min+Vec2::new(28.0,30.0),Vec2::splat(38.0)));
     let copy=painter.with_clip_rect(left.shrink(22.0));
     let offset=Vec2::new(0.0,if reduce_motion {0.0}else{8.0*(1.0-reveal)});
-    copy.text(left.min+Vec2::new(28.0,95.0)+offset,egui::Align2::LEFT_TOP,tr(category),egui::FontId::proportional(text_size(10.0)),mix_color(tint,Color32::BLACK,0.22));
-    let title_galley=copy.layout(tr(title),egui::FontId::proportional(text_size(22.0)),Color32::from_rgb(25,26,30),184.0);
+    copy.text(left.min+Vec2::new(28.0,95.0)+offset,egui::Align2::LEFT_TOP,tr(category),egui::FontId::proportional(text_size(10.0)),accent_color);
+    let title_galley=copy.layout(tr(title),egui::FontId::proportional(text_size(22.0)),title_color,184.0);
     let description_y=(120.0+title_galley.size().y+12.0).max(186.0);
-    copy.galley(left.min+Vec2::new(28.0,120.0)+offset,title_galley,Color32::from_rgb(25,26,30));
-    let description=copy.layout(tr(description.to_string()),egui::FontId::proportional(text_size(12.0)),Color32::from_rgb(91,94,101),184.0);
-    copy.galley(left.min+Vec2::new(28.0,description_y)+offset,description,Color32::from_rgb(91,94,101));
-    copy.text(left.min+Vec2::new(28.0,266.0),egui::Align2::LEFT_TOP,tr(if progress<0.8 {"PREPARING YOUR WORKSPACE"}else{"READY TO OPEN"}),egui::FontId::proportional(text_size(10.0)),Color32::from_rgb(124,127,134));
+    copy.galley(left.min+Vec2::new(28.0,120.0)+offset,title_galley,title_color);
+    let description=copy.layout(tr(description.to_string()),egui::FontId::proportional(text_size(12.0)),body_color,184.0);
+    copy.galley(left.min+Vec2::new(28.0,description_y)+offset,description,body_color);
+    copy.text(left.min+Vec2::new(28.0,266.0),egui::Align2::LEFT_TOP,tr(if progress<0.8 {"PREPARING YOUR WORKSPACE"}else{"READY TO OPEN"}),egui::FontId::proportional(text_size(10.0)),quiet_color);
     let track=egui::Rect::from_min_size(left.min+Vec2::new(28.0,290.0),Vec2::new(184.0,5.0));
-    painter.rect_filled(track,3.0,Color32::from_rgb(226,226,231));
+    painter.rect_filled(track,UI_RADIUS,track_color);
     let fill=egui::Rect::from_min_size(track.min,Vec2::new(track.width()*smooth(progress),track.height()));
-    painter.rect_filled(fill,3.0,tint);
-    copy.text(left.left_bottom()+Vec2::new(28.0,-26.0),egui::Align2::LEFT_BOTTOM,tr("A creative workspace by ArtCraft"),egui::FontId::proportional(text_size(11.0)),Color32::from_rgb(133,136,142));
+    painter.rect_filled(fill,UI_RADIUS,if light {tint}else{accent_color});
+    copy.text(left.left_bottom()+Vec2::new(28.0,-26.0),egui::Align2::LEFT_BOTTOM,tr("A creative workspace by ArtCraft"),egui::FontId::proportional(text_size(11.0)),quiet_color);
 
     let artwork=egui::Rect::from_min_max(egui::pos2(left.right(),rect.top()),rect.max);
     let art=painter.with_clip_rect(artwork.shrink(1.0));
@@ -3053,12 +3142,12 @@ fn paint_suite_splash(
         let angle=rotation+std::f32::consts::TAU*index as f32/icons.len().max(1) as f32-std::f32::consts::FRAC_PI_2;
         let point=center+Vec2::new(angle.cos(),angle.sin())*(104.0+15.0*entry);
         let tile=egui::Rect::from_center_size(point,Vec2::splat(32.0+6.0*entry));
-        art.rect_filled(tile.translate(Vec2::new(0.0,4.0)).expand(3.0),12.0,Color32::from_black_alpha((35.0*entry) as u8));
-        art.rect_filled(tile.expand(4.0),12.0,mix_color(dark,*color,0.26*entry));
-        art.rect_filled(tile,8.0,color.gamma_multiply(entry));
+        art.rect_filled(tile.translate(Vec2::new(0.0,4.0)).expand(3.0),UI_RADIUS,Color32::from_black_alpha((35.0*entry) as u8));
+        art.rect_filled(tile.expand(4.0),UI_RADIUS,mix_color(dark,*color,0.26*entry));
+        art.rect_filled(tile,UI_RADIUS,color.gamma_multiply(entry));
         if let Some(texture)=texture {art.image(*texture,tile.shrink(1.5),uv,Color32::WHITE.gamma_multiply(entry));}
         else {art.text(tile.center(),egui::Align2::CENTER_CENTER,initial,egui::FontId::proportional(text_size(18.0)),Color32::WHITE.gamma_multiply(entry));}
-        art.rect_stroke(tile.expand(4.0),12.0,egui::Stroke::new(1.0_f32,mix_color(dark,*color,0.5*entry)),egui::StrokeKind::Inside);
+        art.rect_stroke(tile.expand(4.0),UI_RADIUS,egui::Stroke::new(1.0_f32,mix_color(dark,*color,0.5*entry)),egui::StrokeKind::Inside);
     }
     draw_mark(&art,egui::Rect::from_center_size(center,Vec2::splat(76.0+4.0*reveal)));
     art.text(artwork.right_top()+Vec2::new(-28.0,26.0),egui::Align2::RIGHT_TOP,tr(format!("WELCOME TO {}",name.to_uppercase())),egui::FontId::proportional(text_size(10.0)),Color32::from_white_alpha(180));
@@ -3119,3 +3208,21 @@ fn project_revision(path: &Path) -> u64 {
 
 // Shared text-size preference on all desktop platforms.
 fn text_size(size: f32) -> f32 { size * windows_ui::text_scale() }
+
+/// Keep page content bounded while placing its scrollbar beside the window edge.
+fn page_scroll(ui: &mut egui::Ui, id: impl std::hash::Hash, contents: impl FnOnce(&mut egui::Ui)) {
+    let original = ui.available_rect_before_wrap();
+    let mut viewport = original;
+    viewport.max.x = ui.ctx().screen_rect().right() - 6.0;
+    let mut scroll_ui = ui.new_child(egui::UiBuilder::new().max_rect(viewport));
+    let mut clip = ui.clip_rect();
+    clip.max.x = viewport.right();
+    scroll_ui.set_clip_rect(clip);
+    egui::ScrollArea::vertical().id_salt(id).auto_shrink([false, true]).show_scoped(&mut scroll_ui, |ui| {
+        // Reserve the usual gutter on small windows, without stretching wide layouts.
+        let width = original.width().min(ui.available_width());
+        ui.set_width(width);
+        contents(ui);
+    });
+    ui.advance_cursor_after_rect(egui::Rect::from_min_max(original.min, egui::pos2(original.right(), scroll_ui.min_rect().bottom())));
+}

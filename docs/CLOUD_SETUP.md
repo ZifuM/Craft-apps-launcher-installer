@@ -9,9 +9,9 @@ Master Suite saves versioned project backups into folders managed by Google Driv
    - [Dropbox](https://www.dropbox.com/install)
    - [OneDrive](https://www.microsoft.com/microsoft-365/onedrive/download)
 2. Finish its setup and locate a folder it syncs. For Google Drive, select a folder inside My Drive on its mounted drive or mirrored folder.
-3. In Master Suite, open **Cloud > Sync folders > Choose folder** for that provider. Select the actual synced folder, not an ordinary local folder.
+3. In Master Suite, open **Settings → Cloud → Sync folders → Choose sync folder** (or use the top-right Cloud shortcut) for that provider. Select the actual synced folder, not an ordinary local folder.
 4. Leave **Use for project backups** enabled for your desired destinations.
-5. In **Files**, select projects and click **Back up now**. Optionally enable **Automatic backup**, which is off by default.
+5. In **Project files**, select projects and click **Back up now**. Optionally enable **Automatic backup**, which is off by default.
 
 Optional onboarding also offers folder selection. Choosing a folder alone does not back up projects.
 
@@ -31,4 +31,4 @@ Optional onboarding also offers folder selection. Choosing a folder alone does n
 
 This is versioned backup, not two-way project synchronization. Master Suite does not directly sign in to providers or use previous OAuth connections. Live provider uploads and restores have not been verified.
 
-Each provider card includes **Download desktop app** and **Open desktop app**. Opening checks usual Windows installation folders; custom installations can be opened from Start. Some clients appear in the system tray instead of showing a window.
+Provider controls include links for installing or opening the desktop app. Custom installations can also be opened through your operating system. Some clients appear in the system tray or menu bar instead of showing a window. Legacy keeps its separate Cloud page.

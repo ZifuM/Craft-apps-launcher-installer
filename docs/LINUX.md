@@ -1,10 +1,10 @@
-# Linux packages — Build 3.3 prerelease
+# Linux packages — Build 3.4 prerelease
 
-The latest Windows interface, update discovery, settings and core source are shared with Linux and macOS. Linux packaging is under `packaging/linux/`. The release workflow builds standalone AppImage and Flatpak downloads for GitHub Releases. The optional source archive is for developers, not installation.
+The latest Windows interface, update discovery, settings and core source are shared with Linux and macOS. Linux packaging is under `packaging/linux/`. The release workflow builds standalone AppImage and Flatpak downloads for GitHub Releases. Source is available through GitHub; the obsolete separate source-bundle script has been removed.
 
 ## Current status
 
-Build 3.3 uses the shared redesigned interface and the existing native Linux packaging. The release workflow builds x86_64 and ARM64 AppImage and Flatpak packages from `v3.3.0-beta.1`. The draft is published only after all platform packages have built and been uploaded. Native desktop behavior has not been manually validated for this build.
+Build 3.4 uses the shared V2/Legacy themes, popup Settings and Cloud, window memory, project-folder moves and startup animations and the existing native Linux packaging. The release workflow builds x86_64 and ARM64 AppImage and Flatpak packages from `v3.4.0-beta.1`. All packages are attached to the draft after successful builds; Build 3.4 remains unpublished for review. Native desktop behavior has not been manually validated for this build.
 
 Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 
@@ -51,7 +51,7 @@ Manual and automatic updates share the same selection logic:
 - **AppImage:** exactly `Linux-<architecture>.AppImage`. SHA-256 and architecture are checked, and the replacement is staged beside the current writable AppImage. A previous copy remains for manual recovery.
 - **Flatpak:** downloads the matching `Linux-<architecture>.flatpak` from the selected GitHub release, checks SHA-256, and installs that bundle when the update is accepted. The existing user/system scope is preserved. Custom branches and custom installations use their software manager.
 
-**Allow prerelease updates** applies to both package formats and to manual/automatic checks. Drafts are excluded. Fresh preferences default to stable-only; existing preferences are retained. The updater also accepts historical package names. Older versions may require manual installation once to recognize the new names.
+**Settings → Apps → Include prerelease updates** (V2) applies to both package formats and to manual/automatic checks. Drafts are excluded. Fresh preferences default to stable-only; existing preferences are retained. The updater also accepts historical package names. Older versions may require manual installation once to recognize the new names.
 
 Standalone GitHub bundles no longer require a hosted Flatpak update repository for the suite updater. The Flatpak runtime still comes from the configured runtime source. System-wide installation may require desktop authorization; a failure leaves an actionable error rather than silently changing scope.
 

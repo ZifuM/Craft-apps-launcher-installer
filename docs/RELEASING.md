@@ -1,12 +1,12 @@
 # Publishing installable downloads
 
-## Build 3.3 prerelease
+## Build 3.4 prerelease
 
-Package version: `3.3.0-beta.1`. Release tag: `v3.3.0-beta.1`.
+Package version: `3.4.0-beta.1`. Release tag: `v3.4.0-beta.1`.
 
 1. Commit and push the intended source, assets, packaging and workflows after approval.
-2. Create a **draft prerelease** for `v3.3.0-beta.1`, targeting that commit. Use `RELEASE_NOTES_3.3.md` for its notes.
-3. Run **Actions → Release downloads → Run workflow**, choosing the updated default branch and that tag. Set **publish** to true only when publication is authorized.
+2. Create a **draft prerelease** for `v3.4.0-beta.1`, targeting that commit. Use `RELEASE_NOTES_3.4.md` for its notes.
+3. Run **Actions → Release downloads → Run workflow**, choosing the updated default branch and that tag. Leave **publish** false for Build 3.4; this build must remain a draft.
 4. Wait for all native jobs to succeed. The workflow builds Windows x64, Linux x86_64/ARM64 AppImage and Flatpak packages, and the universal macOS DMG from the tag.
 5. With **publish** enabled, the workflow publishes the draft only after all six packages and checksums are uploaded. Otherwise, the release stays a draft.
 
@@ -26,7 +26,7 @@ Names contain no spaces and follow `OS-architecture.extension`. The `.flatpak` s
 
 All six packages must be present and nonempty before upload. Checksums are generated from those fresh build outputs. A failed native job prevents that run's upload job. Re-running a successful tag replaces same-name assets; never reuse a version tag for different source.
 
-The workflow uses GitHub's built-in token and never republishes the older setup executable stored at the repository root. Windows builds the launcher before setup because setup embeds that executable.
+The workflow uses GitHub's built-in token and uploads fresh build outputs. Installers and checksums live in release Assets, not the source repository. Windows builds the launcher before setup because setup embeds that executable.
 
 ## Update compatibility
 

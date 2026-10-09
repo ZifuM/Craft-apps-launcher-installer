@@ -2,7 +2,7 @@ use super::*;
 use crate::app_screens::{action, ink_for};
 use crate::windows_ui::toolbar;
 #[path = "profile.rs"]
-mod profile;
+pub(crate) mod profile;
 
 impl Launcher {
     fn workspace_identity(&mut self, ui: &mut egui::Ui, app: AppInfo, state: &AppState) {
@@ -12,7 +12,7 @@ impl Launcher {
         let artwork = ui.painter().add(egui::Shape::Noop);
         let wide = ui.available_width() >= 900.0;
         let frame = egui::Frame::new()
-            .corner_radius(14)
+            .corner_radius(UI_RADIUS)
             .stroke(egui::Stroke::new(1.0_f32, border()))
             .inner_margin(24)
             .show(ui, |ui| {
@@ -47,7 +47,7 @@ impl Launcher {
                     );
                     if let Some(texture) = &state.icon {
                         egui::Image::new((texture.id(), texture.size_vec2()))
-                            .corner_radius(20)
+                            .corner_radius(UI_RADIUS)
                             .paint_at(ui, logo);
                     } else {
                         let mut logo_ui = ui.new_child(egui::UiBuilder::new().max_rect(logo));
@@ -84,7 +84,7 @@ impl Launcher {
                         for (label, color) in badges {
                             egui::Frame::new()
                                 .fill(mix_color(panel(), app.tint, 0.06))
-                                .corner_radius(6)
+                                .corner_radius(UI_RADIUS)
                                 .inner_margin(egui::Margin::symmetric(9, 5))
                                 .show(ui, |ui| {
                                     ui.label(
@@ -275,7 +275,7 @@ impl Launcher {
             let available_width = ui.available_width();
             egui::ScrollArea::horizontal()
                 .id_salt("workspace-library-toolbar")
-                .show(ui, |ui| {
+                .show_scoped(ui, |ui| {
                     let tab_width = text_size(330.0);
                     let browse_width = ui
                         .painter()
@@ -380,7 +380,7 @@ impl Launcher {
             .cloned()
             .collect();
         if projects.is_empty() {
-            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(14).inner_margin(28).show(ui,|ui| {
+            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(UI_RADIUS).inner_margin(28).show(ui,|ui| {
                 ui.set_width(ui.available_width());
                 ui.label(RichText::new(tr(if query.is_empty(){"Your next project starts here"}else{"No matching projects"})).size(text_size(19.0)));
                 ui.add_space(6.0);
@@ -480,7 +480,7 @@ impl Launcher {
             });
             ui.painter().rect_filled(
                 rect,
-                12.0,
+                UI_RADIUS,
                 if response.hovered() {
                     mix_color(panel(), project.app.tint, 0.035)
                 } else {
@@ -489,7 +489,7 @@ impl Launcher {
             );
             ui.painter().rect_stroke(
                 rect,
-                12.0,
+                UI_RADIUS,
                 egui::Stroke::new(
                     1.0_f32,
                     if response.has_focus() {
@@ -628,10 +628,10 @@ impl Launcher {
 
     fn workspace_placeholder(&mut self, ui: &mut egui::Ui, app: &AppInfo, plugins: bool) {
         app_screens::experimental_banner(ui);
-        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(12).inner_margin(32).show(ui,|ui|{
+        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(UI_RADIUS).inner_margin(32).show(ui,|ui|{
             ui.set_width(ui.available_width());
             let (r,_)=ui.allocate_exact_size(Vec2::splat(56.0),egui::Sense::hover());
-            ui.painter().rect_filled(r,14.0,mix_color(panel(),app.tint,0.12));
+            ui.painter().rect_filled(r,UI_RADIUS,mix_color(panel(),app.tint,0.12));
             paint_navigation_icon(ui.painter(),r.shrink(16.0),Page::Projects,readable_app_color(app.tint));
             ui.add_space(16.0);
             ui.label(RichText::new(tr(if plugins{"Plugin management"}else{"Asset management"})).size(text_size(23.0)).strong());
@@ -653,7 +653,7 @@ fn workspace_art(rect: egui::Rect, texture: &egui::TextureHandle) -> egui::Mesh 
     let scale = (rect.width() / image_size.x).max(rect.height() / image_size.y);
     let painted_size = image_size * scale;
     let image_origin = rect.center() - painted_size * 0.5;
-    let radius = 13.0_f32;
+    let radius = (UI_RADIUS as f32).min(rect.height() * 0.5);
     const STEPS: usize = 64;
     for y in 0..=STEPS {
         let vertical = y as f32 / STEPS as f32;

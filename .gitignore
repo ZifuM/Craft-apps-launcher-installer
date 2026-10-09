@@ -4,3 +4,9 @@ dist/
 
 # Previous local installer; current builds use OS-architecture names.
 /ArtCraftMasterSuite-Setup.exe
+
+# Installable downloads belong in release Assets, not the source checkout.
+/Windows-*.exe
+/ArtCraftMasterSuite-*.zip
+/ArtCraftMasterSuite-*-Source.tar.gz
+/SHA256SUMS.txt

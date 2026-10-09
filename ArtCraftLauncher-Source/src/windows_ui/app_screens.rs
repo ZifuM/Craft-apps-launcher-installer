@@ -10,7 +10,7 @@ pub(super) fn experimental_banner(ui: &mut egui::Ui) {
     } else {
         Color32::from_rgb(222, 178, 99)
     };
-    egui::Frame::new().fill(mix_color(panel(),amber,0.06)).corner_radius(8).inner_margin(egui::Margin::symmetric(12,7)).show(ui,|ui|{
+    egui::Frame::new().fill(mix_color(panel(),amber,0.06)).corner_radius(UI_RADIUS).inner_margin(egui::Margin::symmetric(12,7)).show(ui,|ui|{
         ui.set_width(ui.available_width());
         ui.spacing_mut().interact_size.y=18.0;
         ui.horizontal_wrapped(|ui|{
@@ -68,7 +68,7 @@ pub(super) fn action(
     let painter = ui.painter_at(rect.expand(2.0));
     painter.rect_filled(
         rect,
-        9.0,
+        UI_RADIUS,
         if hover {
             mix_color(fill, foreground(), 0.08)
         } else {
@@ -77,7 +77,7 @@ pub(super) fn action(
     );
     painter.rect_stroke(
         rect,
-        9.0,
+        UI_RADIUS,
         egui::Stroke::new(
             1.0_f32,
             if response.has_focus() {
@@ -188,7 +188,7 @@ impl Launcher {
         }
         egui::Frame::new()
             .fill(mix_color(panel(), ACCENT, 0.06))
-            .corner_radius(10)
+            .corner_radius(UI_RADIUS)
             .inner_margin(14)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -423,9 +423,7 @@ impl Launcher {
                 self.filter = "All apps".into();
             }
         }
-        egui::ScrollArea::vertical()
-            .id_salt("manager-redesign")
-            .show(ui, |ui| {
+        page_scroll(ui, "manager-redesign", |ui| {
                 if apps.is_empty() {
                     self.library_empty(ui, false);
                 } else {
@@ -524,9 +522,7 @@ impl Launcher {
             self.library_empty(ui, true);
             return;
         }
-        egui::ScrollArea::vertical()
-            .id_salt("collection-redesign")
-            .show(ui, |ui| {
+        page_scroll(ui, "collection-redesign", |ui| {
                 for (group, label) in [
                     (AppGroup::Creative, "Creative workspace"),
                     (AppGroup::Office, "Productivity workspace"),
@@ -628,7 +624,7 @@ impl Launcher {
                 Color32::WHITE,
             );
         } else {
-            painter.rect_filled(logo, 12.0, app.tint);
+            painter.rect_filled(logo, UI_RADIUS, app.tint);
             painter.text(
                 logo.center(),
                 egui::Align2::CENTER_CENTER,
@@ -655,7 +651,7 @@ impl Launcher {
             egui::pos2(rect.right() - 20.0 - badge_width, rect.top() + 22.0),
             Vec2::new(badge_width, 25.0),
         );
-        painter.rect_filled(badge, 6.0, mix_color(panel(), color, 0.075));
+        painter.rect_filled(badge, UI_RADIUS, mix_color(panel(), color, 0.075));
         painter.with_clip_rect(badge.shrink(5.0)).galley(
             badge.center() - status_galley.size() * 0.5,
             status_galley,

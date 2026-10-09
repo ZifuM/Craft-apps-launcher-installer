@@ -1,4 +1,4 @@
-//! Shared desktop interface for Windows, Linux and macOS — Build 3.3.
+//! Shared desktop interface for Windows, Linux and macOS.
 use super::*;
 pub(crate) mod menus;
 pub(crate) mod toolbar;
@@ -66,7 +66,12 @@ pub(super) fn refine_style(style: &mut egui::Style) {
         egui::Stroke::new(1.0_f32, mix_color(border(), ACCENT, 0.45));
     style.visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, ACCENT);
     style.visuals.selection.stroke = egui::Stroke::new(1.0_f32, foreground());
-    style.visuals.window_corner_radius = 14.into();
+    style.visuals.window_corner_radius = UI_RADIUS.into();
+    style.visuals.menu_corner_radius = UI_RADIUS.into();
+    for widget in [&mut style.visuals.widgets.noninteractive, &mut style.visuals.widgets.inactive,
+        &mut style.visuals.widgets.hovered, &mut style.visuals.widgets.active, &mut style.visuals.widgets.open] {
+        widget.corner_radius = UI_RADIUS.into();
+    }
     style.visuals.window_stroke = egui::Stroke::new(1.0_f32, border());
 }
 
@@ -84,7 +89,7 @@ impl Launcher {
         if selected || response.hovered() {
             ui.painter().rect_filled(
                 rect,
-                6.0,
+                UI_RADIUS,
                 mix_color(panel(), app.tint, if selected { 0.13 } else { 0.055 }),
             );
         }
@@ -104,7 +109,7 @@ impl Launcher {
                 Color32::WHITE,
             );
         } else {
-            ui.painter().rect_filled(icon, 5.0, app.tint);
+            ui.painter().rect_filled(icon, UI_RADIUS, app.tint);
         }
         if !compact {
             let name = ui.painter().layout_no_wrap(
@@ -227,7 +232,7 @@ impl Launcher {
                         "Collapse navigation"
                     }));
                 if response.hovered() {
-                    ui.painter().rect_filled(toggle, 7.0, card());
+                    ui.painter().rect_filled(toggle, UI_RADIUS, card());
                 }
                 let icon = egui::Rect::from_center_size(
                     if compact {
@@ -271,11 +276,11 @@ impl Launcher {
                     .filter(|s| s.installed.is_some())
                     .count();
                 let navigation_height =
-                    (ui.available_height() - if compact { 66.0 } else { 132.0 }).max(60.0);
+                    (ui.available_height() - 56.0).max(60.0);
                 egui::ScrollArea::vertical()
                     .id_salt("modern-navigation")
                     .max_height(navigation_height)
-                    .show(ui, |ui| {
+                    .show_scoped(ui, |ui| {
                         if !compact {
                             ui.label(
                                 RichText::new(tr("  LIBRARY"))
@@ -332,50 +337,28 @@ impl Launcher {
                             "Your project backups",
                             None,
                         );
-                        if !compact {
-                            ui.add_space(22.0);
-                            ui.label(
-                                RichText::new(tr("Workspaces").to_uppercase())
-                                    .font(toolbar::font(10.0, true))
-                                    .color(muted()),
-                            );
-                            ui.add_space(6.0);
-                        } else {
-                            ui.add_space(12.0);
-                        }
-                        for app in APPS.iter().copied() {
-                            self.sidebar_app(ui, app);
+                        if installed > 0 {
+                            if !compact {
+                                ui.add_space(22.0);
+                                ui.label(
+                                    RichText::new(tr("Workspaces").to_uppercase())
+                                        .font(toolbar::font(10.0, true))
+                                        .color(muted()),
+                                );
+                                ui.add_space(6.0);
+                            } else {
+                                ui.add_space(12.0);
+                            }
+                            for app in APPS.iter().copied() {
+                                if self.states.get(app.id).is_some_and(|state| state.installed.is_some()) {
+                                    self.sidebar_app(ui, app);
+                                }
+                            }
                         }
                     });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     self.modern_side_link(ui, Page::Settings, "Settings", "Make it yours", None);
-                    ui.add_space(10.0);
-                    if !compact {
-                        let (status, _) = ui.allocate_exact_size(
-                            Vec2::new(ui.available_width(), 48.0),
-                            egui::Sense::hover(),
-                        );
-                        ui.painter().rect_filled(status, 10.0, ink());
-                        ui.painter().circle_filled(
-                            status.left_center() + Vec2::new(17.0, 0.0),
-                            3.0,
-                            theme_rgb(100, 206, 163),
-                        );
-                        ui.painter().text(
-                            status.left_center() + Vec2::new(30.0, -8.0),
-                            egui::Align2::LEFT_CENTER,
-                            tr("Your local workspace"),
-                            egui::FontId::proportional(text_size(11.0)),
-                            theme_rgb(210, 214, 223),
-                        );
-                        ui.painter().text(
-                            status.left_center() + Vec2::new(30.0, 9.0),
-                            egui::Align2::LEFT_CENTER,
-                            tr(format!("{installed} apps installed")),
-                            egui::FontId::proportional(text_size(10.0)),
-                            muted(),
-                        );
-                    }
+
                 });
             });
     }
@@ -410,11 +393,11 @@ impl Launcher {
             panel()
         };
         ui.painter()
-            .rect_filled(rect, 7.0, mix_color(base, ACCENT, hover * 0.06));
+            .rect_filled(rect, UI_RADIUS, mix_color(base, ACCENT, hover * 0.06));
         if selected {
             ui.painter().rect_stroke(
                 rect,
-                7.0,
+                UI_RADIUS,
                 egui::Stroke::new(1.0_f32, mix_color(border(), ACCENT, 0.25)),
                 egui::StrokeKind::Inside,
             );
@@ -496,7 +479,7 @@ impl Launcher {
                 );
                 ui.painter().rect_filled(
                     badge,
-                    6.0,
+                    UI_RADIUS,
                     if selected {
                         mix_color(panel(), ACCENT, 0.18)
                     } else {
@@ -562,7 +545,7 @@ impl Launcher {
             .filter(|s| s.installed.is_some() && s.latest.is_some() && s.latest != s.installed)
             .count();
         let errors = self.states.values().filter(|s| s.error.is_some()).count();
-        egui::ScrollArea::vertical().id_salt("home-dashboard").show(ui, |ui| {
+        page_scroll(ui, "home-dashboard", |ui| {
             toolbar::style(ui);
             let hero=toolbar::page_banner(ui,"Home","From idea to your next project.",Page::Home);
             let banner=hero.rect;
@@ -587,8 +570,8 @@ impl Launcher {
                     let size = 18.0 + 12.0 * progress;
                     let scale = size / 36.0;
                     let tile = egui::Rect::from_center_size(position, Vec2::splat(size));
-                    painter.rect_filled(tile.expand(5.0 * scale), 11.0 * scale, mix_color(panel(), app.tint, 0.24));
-                    painter.rect_stroke(tile.expand(5.0 * scale), 11.0 * scale, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.45)), egui::StrokeKind::Inside);
+                    painter.rect_filled(tile.expand(5.0 * scale), UI_RADIUS, mix_color(panel(), app.tint, 0.24));
+                    painter.rect_stroke(tile.expand(5.0 * scale), UI_RADIUS, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.45)), egui::StrokeKind::Inside);
                     if let Some(texture) = self.states.get(app.id).and_then(|state| state.icon.as_ref()) {
                         painter.image(texture.id(), tile, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                     } else { painter.text(position, egui::Align2::CENTER_CENTER,tr(&app.name[..1]), egui::FontId::proportional(text_size(19.0 * scale)), app.tint); }
@@ -629,7 +612,7 @@ impl Launcher {
                             if let Some(texture) = state.icon {
                                 ui.painter().image(texture.id(), logo, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                             } else {
-                                ui.painter().rect_filled(logo, 8.0, app.tint);
+                                ui.painter().rect_filled(logo, UI_RADIUS, app.tint);
                                 ui.painter().text(logo.center(), egui::Align2::CENTER_CENTER,tr(&app.name[..1]), egui::FontId::proportional(text_size(20.0)), foreground());
                             }
                             ui.painter().text(egui::pos2(rect.left() + 66.0, rect.center().y - 10.0), egui::Align2::LEFT_CENTER,tr(app.name), toolbar::font(14.0,true), foreground());
@@ -643,7 +626,7 @@ impl Launcher {
             ui.add_space(20.0);
             if toolbar::section(ui,"home-library","Recent projects","Continue where you left off.","View all projects") {self.project_filter="All apps".into();self.projects_tab=false;self.project_scope="All projects".into();self.search.clear();self.page=Page::Projects;}
             if self.projects.is_empty() {
-                egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(24).show(ui, |ui| {
+                egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(24).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let (title, subtitle) = if self.prefs.roots.is_empty() {
                         ("Bring your projects together", "Choose a folder to create a home for each app and discover your saved work.")
@@ -689,7 +672,7 @@ impl Launcher {
         let toolbar_width = ui.available_width();
         egui::ScrollArea::horizontal()
             .id_salt("project-library-toolbar")
-            .show(ui, |ui| {
+            .show_scoped(ui, |ui| {
                 let gap = 8.0;
                 let tabs_width = text_size(224.0);
                 let app_width = text_size(126.0);
@@ -895,15 +878,13 @@ impl Launcher {
             return;
         }
         let mut remove = None;
-        egui::ScrollArea::vertical()
-            .id_salt("library-folders")
-            .show(ui, |ui| {
+        page_scroll(ui, "library-folders", |ui| {
                 for (index, root) in roots.iter().enumerate() {
                     ui.push_id(index, |ui| {
                         egui::Frame::new()
                             .fill(panel())
                             .stroke(egui::Stroke::new(1.0_f32, border()))
-                            .corner_radius(12)
+                            .corner_radius(UI_RADIUS)
                             .inner_margin(20)
                             .show(ui, |ui| {
                                 ui.set_width(ui.available_width());
@@ -950,6 +931,9 @@ impl Launcher {
                                     if secondary_button(ui, "Open folder").clicked() {
                                         reveal_project_path(root, false);
                                     }
+                                    if secondary_button(ui, "Move folder").clicked() {
+                                        self.choose_folder_move(root.clone());
+                                    }
                                     if self.prefs.default_project_root.as_ref() == Some(root) {
                                         ui.label(
                                             RichText::new(tr("Default folder"))
@@ -992,7 +976,7 @@ impl Launcher {
         self.project_context_menu(&response, project);
         ui.painter().rect_filled(
             rect,
-            10.0,
+            UI_RADIUS,
             if response.hovered() {
                 mix_color(panel(), ACCENT, 0.04)
             } else {
@@ -1001,7 +985,7 @@ impl Launcher {
         );
         ui.painter().rect_stroke(
             rect,
-            9.0,
+            UI_RADIUS,
             egui::Stroke::new(1.0_f32, border()),
             egui::StrokeKind::Inside,
         );
@@ -1076,7 +1060,7 @@ impl Launcher {
             ));
         let summary = self.cloud.backup_status(project);
         let badge = egui::Rect::from_min_size(rect.min + Vec2::new(55.0, 48.0), Vec2::splat(22.0));
-        ui.painter().rect_filled(badge, 6.0, panel());
+        ui.painter().rect_filled(badge, UI_RADIUS, panel());
         cloud_ui::paint_backup(ui.painter(), badge, summary.state);
         ui.interact(
             badge,
@@ -1095,7 +1079,7 @@ impl Launcher {
         let tile = egui::Frame::new()
             .fill(panel())
             .stroke(egui::Stroke::new(1.0_f32, border()))
-            .corner_radius(12)
+            .corner_radius(UI_RADIUS)
             .inner_margin(16)
             .show(ui, |ui| {
                 let available = ui.available_width();
@@ -1188,7 +1172,7 @@ impl Launcher {
             self.page = Page::Home;
         }
         let navigation = toolbar::row(ui);
-        let width = navigation.width().min(650.0);
+        let width = navigation.width().min(760.0);
         if let Some(index) = toolbar::tabs(
             ui,
             egui::Rect::from_min_size(navigation.min, Vec2::new(width, toolbar::HEIGHT)),
@@ -1199,12 +1183,14 @@ impl Launcher {
                 ("Projects", None),
                 ("System", None),
                 ("About", None),
+                ("Themes", None),
             ],
             self.settings_tab,
         ) {
             self.settings_tab = index;
         }
         toolbar::divider(ui);
+        if self.settings_tab == 5 { self.theme_picker(ui); }
         let previous_startup = self.prefs.start_with_windows;
         let before = serde_json::to_string(&self.prefs).unwrap_or_default();
         if self.settings_tab == 0 {
@@ -1468,7 +1454,7 @@ impl Launcher {
             );
         }
         if self.settings_tab == 2 {
-            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(20).show(ui, |ui| {
+            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(20).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(tr("Project folders")).size(text_size(16.0)).strong());
             ui.label(RichText::new(tr("Each folder gets a subfolder for every app. The default folder is also used as the app's launch and save location where the app supports it; an app's own saved location can override it.")).size(text_size(12.0)).color(muted()));
@@ -1479,7 +1465,7 @@ impl Launcher {
             for (i, root) in roots.iter().enumerate() {
                 let width = ui.available_width();
                 let (row_rect, _) = ui.allocate_exact_size(Vec2::new(width, 40.0), egui::Sense::hover());
-                let actions_width = 190.0_f32.min((width - 140.0).max(120.0));
+                let actions_width = 304.0_f32.min((width - 140.0).max(120.0));
                 let path_rect = egui::Rect::from_min_max(row_rect.left_top(), egui::pos2(row_rect.right() - actions_width, row_rect.bottom()));
                 ui.painter().with_clip_rect(path_rect).text(path_rect.left_center() + Vec2::new(2.0, 0.0), egui::Align2::LEFT_CENTER, root.display().to_string(), egui::FontId::proportional(text_size(12.0)), theme_rgb(205, 207, 213));
                 ui.interact(path_rect, egui::Id::new(("project-root-path", i)), egui::Sense::hover()).on_hover_text(root.display().to_string());
@@ -1492,6 +1478,9 @@ impl Launcher {
                     self.prefs.default_project_root = Some(root.clone());
                     save_preferences(&self.prefs);
                     self.toast = Some(format!("{} is now the default app project folder.", root.display()));
+                }
+                if actions.add_sized([100.0, 32.0], egui::Button::new(tr("Move folder"))).clicked() {
+                    self.choose_folder_move(root.clone());
                 }
                 if icon_button(&mut actions, ButtonIcon::Delete, "Stop watching this folder", theme_rgb(213, 103, 111)).clicked() { remove = Some(i); }
             }
@@ -1522,7 +1511,7 @@ impl Launcher {
             );
         }
         if self.settings_tab == 4 {
-            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(20).show(ui, |ui| {
+            egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(20).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(tr("About ArtCraft Master Suite")).size(text_size(16.0)).strong());
             ui.label(RichText::new(tr(format!("Version {VERSION} · Beta"))).size(text_size(12.0)).color(muted()));
@@ -1544,7 +1533,7 @@ impl Launcher {
                                         Vec2::new(ui.available_width(), 60.0),
                                         egui::Sense::hover(),
                                     );
-                                    ui.painter().rect_filled(row, 10.0, card());
+                                    ui.painter().rect_filled(row, UI_RADIUS, card());
                                     let logo = egui::Rect::from_min_size(
                                         row.min + Vec2::new(12.0, 14.0),
                                         Vec2::splat(32.0),
@@ -1646,7 +1635,7 @@ fn toolbar_primary_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
 
 /// A subtle app-color wash, tessellated within rounded corners.
 pub(super) fn identity_mesh(rect: egui::Rect, tint: Color32, hover: bool) -> egui::Mesh {
-    let radius = 14.0_f32.min(rect.height() * 0.5);
+    let radius = (UI_RADIUS as f32).min(rect.height() * 0.5);
     let mut mesh = egui::Mesh::default();
     let color = |point: egui::Pos2| {
         let x = ((point.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0);
@@ -1685,7 +1674,7 @@ pub(super) fn identity_mesh(rect: egui::Rect, tint: Color32, hover: bool) -> egu
 }
 
 pub(super) fn identity_surface(p: &egui::Painter, rect: egui::Rect, tint: Color32, hover: bool) {
-    let radius = 14.0_f32.min(rect.height() * 0.5);
+    let radius = (UI_RADIUS as f32).min(rect.height() * 0.5);
     p.add(egui::Shape::mesh(identity_mesh(rect, tint, hover)));
     p.rect_stroke(
         rect,
