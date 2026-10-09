@@ -8,9 +8,7 @@ The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and 
 
 ## Build status
 
-Build 3.2 source and packaging are prepared for `v3.2.0-beta.1`. Its native DMG build is pending the release workflow. The following status describes the earlier release.
-
-Build 3.1 was compiled for Intel and Apple Silicon on GitHub's Mac runner. The universal app, code-signature integrity and DMG integrity checks passed, and the downloaded DMG matches the draft release checksum. The installable DMG is attached to the Build 3.1 draft; desktop behavior has not yet been manually validated.
+Build 3.2 compiled for Intel and Apple Silicon on GitHub’s Mac runner. The universal app, code-signature integrity and DMG integrity checks passed. The downloaded `macOS-universal.dmg` matches the draft release checksum. Desktop behavior has not yet been manually validated.
 
 ## Install
 

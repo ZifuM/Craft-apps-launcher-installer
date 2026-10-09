@@ -44,4 +44,6 @@ Flatpak updates now download the checksum-verified GitHub bundle for the selecte
 
 ## Build status
 
-Source and packaging are prepared locally. Native Linux/macOS packages must be built by the release workflow before this prerelease is published. Desktop installation and behavior still require hands-on validation on those systems.
+All six installable packages built successfully on native GitHub runners on 2026-10-09 and are attached to the draft prerelease. Downloaded files match the release SHA-256 checksums. The universal Mac app passed architecture, signature-integrity and DMG-integrity checks. [Build results](https://github.com/ZifuM/Craft-apps-launcher-installer/actions/runs/37886265870).
+
+This release remains a draft for review. Successful builds do not establish desktop compatibility; installation and behavior still require hands-on validation on Linux and macOS.

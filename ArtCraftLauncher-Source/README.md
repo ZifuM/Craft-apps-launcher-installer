@@ -37,38 +37,50 @@ The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `win
 | WordCraft | Word processing | `.docx`, `.odt`, `.rtf`, `.html`, `.md`, `.txt` |
 | DeckCraft | Presentations | `.deckcraft`, `.pptx` |
 
-The App Manager separates **Creative Apps** and **Productivity Apps**. SoundCraft is listed under Creative Apps, but it does not yet have an official Windows release to install.
+The App Manager separates **Creative Apps** and **Productivity Apps**. It selects the available official package for the current operating system and architecture.
 
-The launcher matches files by extension. A preview is shown when it can be extracted from the file; formats without readable preview data use the app’s logo instead. Recognizing an Adobe-compatible file extension does not guarantee that every feature of that format is supported by the app.
+The launcher matches files by extension. A preview is shown when it can be extracted from the file; formats without readable preview data show an unavailable-preview fallback. Recognizing an Adobe-compatible file extension does not guarantee that every feature of that format is supported by the app.
 
 ## Install
 
-Download the Windows setup executable from the project’s **Releases** page and run it. Setup installs the launcher for the current Windows user and adds Start menu and desktop shortcuts.
+See the [main installation guide](../README.md#install) for Windows, Linux and macOS package names and instructions. Windows setup installs for the current user and adds Start menu and desktop shortcuts.
 
-The launcher downloads official Windows app releases from the [Storytold GitHub organization](https://github.com/storytold). A network connection is needed to discover releases, install apps, and check for updates. If a release check or download fails, the launcher reports the problem; installed apps and local projects remain on the device.
+The launcher downloads official platform-specific app releases from the [Storytold GitHub organization](https://github.com/storytold). A network connection is needed to discover releases, install apps, and check for updates. If a release check or download fails, the launcher reports the problem; installed apps and local projects remain on the device.
 
 ## Build from source
 
-### Requirements
+### Windows requirements
 
 - Windows
 - The stable Rust toolchain, including the MSVC target
 - Visual Studio Build Tools with the C++ build tools for MSVC
 
-From the repository directory, build the launcher first, then the setup program:
+From `ArtCraftLauncher-Source`, build the launcher first, then the setup program:
 
 ```powershell
-cargo build --release --bin artcraft-launcher
-cargo build --release --bin artcraft-setup
+cargo build --locked --release --bin artcraft-launcher
+cargo build --locked --release --bin artcraft-setup
 ```
 
 The setup executable is written to `target/release/artcraft-setup.exe`. It embeds the launcher executable, so rebuild the launcher before rebuilding setup.
 
+### Linux and macOS
+
+Use a native machine/runner matching the target platform. From the repository root, run `bash packaging/linux/build-appimage.sh`, `bash packaging/linux/build-flatpak.sh`, or `bash packaging/macos/build-dmg.sh`. Platform requirements and limitations are in [LINUX.md](../docs/LINUX.md) and [MACOS.md](../docs/MACOS.md).
+
+The release workflow builds all six installers from the matching version tag; see [RELEASING.md](../docs/RELEASING.md).
+
 ## Local data
+
+**Windows**
 
 - Launcher: `%LOCALAPPDATA%\Programs\ArtCraft Launcher`
 - Installed apps: `%LOCALAPPDATA%\Programs\ArtCraft Apps`
 - Launcher preferences: `%LOCALAPPDATA%\ArtCraftLauncher`
+
+**macOS:** suite data is in `~/Library/Application Support/ArtCraft Master Suite`; managed apps are in `~/Applications/ArtCraft Apps`.
+
+**Linux:** suite data uses `$XDG_DATA_HOME/artcraft-master-suite` (default `~/.local/share/artcraft-master-suite`); managed apps are under its `apps` folder. Flatpak uses its sandbox data directory and portal-selected project folders.
 
 Projects stay in their existing folders. Adding a watched folder creates app-named subfolders inside it and scans the folder and its subfolders. The configured default app folder becomes each app’s working directory when launched. This can help apps choose a save location, but apps that manage their own save preferences may use a different location.
 

@@ -4,7 +4,7 @@ The latest Windows interface, update discovery, settings and core source are sha
 
 ## Current status
 
-Build 3.0/3.1 native packages were produced previously. Build 3.2 source and packaging are prepared; new packages must be built from `v3.2.0-beta.1` on GitHub Actions before publication. Both x86_64 and ARM64 use native Linux runners. The complete release contains six installers across Windows, Linux and macOS. See [RELEASING.md](RELEASING.md).
+Build 3.2 AppImage and Flatpak packages built successfully from `v3.2.0-beta.1` on native x86_64 and ARM64 GitHub runners. All four Linux files are attached to the draft prerelease and downloaded copies match its SHA-256 checksums. The complete release contains six installers across Windows, Linux and macOS. See [RELEASING.md](RELEASING.md).
 
 Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 

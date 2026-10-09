@@ -8,7 +8,7 @@
 
 ## Install
 
-Open **[GitHub Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases)** and choose the package for your system under **Assets**. Build 3.2 remains a draft until its native packages are ready for publication; earlier releases use their original filenames.
+Open **[GitHub Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases)** and choose the package for your system under **Assets**. Build 3.2 is a draft prerelease for review, with all six packages built. It becomes publicly downloadable when published; earlier releases use their original filenames.
 
 | System | Download | Installation |
 | --- | --- | --- |
