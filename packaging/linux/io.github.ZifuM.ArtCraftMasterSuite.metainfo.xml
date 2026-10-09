@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+<id>io.github.ZifuM.ArtCraftMasterSuite</id>
+<name>ArtCraft Master Suite</name>
+<summary>Manage your ArtCraft apps and projects</summary>
+<metadata_license>CC0-1.0</metadata_license><project_license>MIT</project_license>
+<description><p>Install and update ArtCraft tools, browse projects, and manage versioned backups. Cloud, assets and plugins are experimental.</p></description>
+<launchable type="desktop-id">io.github.ZifuM.ArtCraftMasterSuite.desktop</launchable>
+<url type="homepage">https://github.com/ZifuM/Craft-apps-launcher-installer</url>
+<content_rating type="oars-1.1" />
+</component>

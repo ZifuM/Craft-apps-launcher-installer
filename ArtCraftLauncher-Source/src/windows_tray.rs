@@ -63,9 +63,9 @@ unsafe extern "system" fn callback(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM, _
             } else if action == WM_RBUTTONUP || action == WM_CONTEXTMENU {
                 let menu = CreatePopupMenu();
                 if !menu.is_null() {
-                    AppendMenuW(menu, MF_STRING, 1, wide("Open ArtCraft Master Suite").as_ptr());
+                    AppendMenuW(menu, MF_STRING, 1, wide(&crate::localization::tr("Open ArtCraft Master Suite")).as_ptr());
                     AppendMenuW(menu, MF_SEPARATOR, 0, ptr::null());
-                    AppendMenuW(menu, MF_STRING, 2, wide("Quit").as_ptr());
+                    AppendMenuW(menu, MF_STRING, 2, wide(&crate::localization::tr("Quit")).as_ptr());
                     let mut point = POINT { x: 0, y: 0 }; GetCursorPos(&mut point);
                     SetForegroundWindow(hwnd);
                     let selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, point.x, point.y, 0, hwnd, ptr::null());

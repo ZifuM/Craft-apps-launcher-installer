@@ -2,11 +2,29 @@
 //! shift the controls on adjacent cards. The prior screens remain selectable.
 use super::*;
 
+/// Shared, wrapping notice for features that are still under development.
+pub(super) fn experimental_banner(ui: &mut egui::Ui) {
+    let amber = Color32::from_rgb(225, 162, 55);
+    egui::Frame::new()
+        .fill(mix_color(panel(), amber, 0.09))
+        .stroke(egui::Stroke::new(1.0_f32, mix_color(border(), amber, 0.35)))
+        .corner_radius(10)
+        .inner_margin(16)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(RichText::new(tr("Experimental")).size(12.0).strong().color(readable_app_color(amber)));
+            ui.add_space(5.0);
+            ui.add(egui::Label::new(RichText::new(tr("These features are still being developed and may not function as intended.")).size(13.0).color(foreground())).wrap());
+        });
+    ui.add_space(18.0);
+}
+
+
 pub(super) fn text_at(ui: &mut egui::Ui, rect: egui::Rect, text: impl Into<String>, size: f32, color: Color32) -> egui::Response {
     let mut child=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
     // Keep the scroll viewport clip: replacing it lets scrolled text paint over the header.
     child.set_clip_rect(rect.intersect(ui.clip_rect()));
-    child.add(egui::Label::new(RichText::new(text.into()).size(size).color(color)).truncate())
+    child.add(egui::Label::new(RichText::new(tr(text.into())).size(size).color(color)).truncate())
 }
 pub(super) fn action(ui:&mut egui::Ui,rect:egui::Rect,id:impl std::hash::Hash,label:&str,fill:Color32,text:Color32,enabled:bool)->egui::Response{
     let response=ui.interact(rect,ui.id().with(id),if enabled{egui::Sense::click()}else{egui::Sense::hover()});
@@ -14,7 +32,15 @@ pub(super) fn action(ui:&mut egui::Ui,rect:egui::Rect,id:impl std::hash::Hash,la
     let painter=ui.painter_at(rect.expand(2.0));
     painter.rect_filled(rect,9.0,if hover{mix_color(fill,foreground(),0.08)}else{fill});
     painter.rect_stroke(rect,9.0,egui::Stroke::new(1.0_f32,if response.has_focus(){ACCENT}else{mix_color(fill,text,0.13)}),egui::StrokeKind::Inside);
-    painter.text(rect.center(),egui::Align2::CENTER_CENTER,label,egui::FontId::proportional(13.0),if enabled{text}else{muted()});
+    let translated=tr(label);
+    let mut font_size=13.0;
+    let mut galley=painter.layout_no_wrap(translated.clone(),egui::FontId::proportional(font_size),if enabled{text}else{muted()});
+    if galley.size().x > rect.width()-16.0 {
+        font_size=(font_size*(rect.width()-16.0)/galley.size().x).max(10.0);
+        galley=painter.layout_no_wrap(translated.clone(),egui::FontId::proportional(font_size),if enabled{text}else{muted()});
+    }
+    painter.with_clip_rect(rect.shrink(6.0)).galley(rect.center()-galley.size()*0.5,galley,if enabled{text}else{muted()});
+    let response=response.on_hover_text(translated);
     response.widget_info(||egui::WidgetInfo::labeled(egui::WidgetType::Button,enabled,label));
     if enabled{response.on_hover_cursor(egui::CursorIcon::PointingHand)}else{response}
 }
@@ -43,7 +69,7 @@ impl Launcher {
         let mut child=ui.new_child(egui::UiBuilder::new().max_rect(rect));
         child.spacing_mut().interact_size.y=40.0;
         let input=if collection{&mut self.your_apps_search}else{&mut self.manager_search};
-        child.add_sized(rect.size(),egui::TextEdit::singleline(input).hint_text(if collection{"Search your installed apps..."}else{"Search apps by name or purpose..."}).margin(Vec2::new(14.0,10.0)));
+        child.add_sized(rect.size(),egui::TextEdit::singleline(input).hint_text(tr(if collection{"Search your installed apps..."}else{"Search apps by name or purpose..."})).margin(Vec2::new(14.0,10.0)));
         if !collection{
             let rect=egui::Rect::from_min_size(egui::pos2(row.right()-40.0,row.top()),Vec2::splat(40.0));
             let mut child=ui.new_child(egui::UiBuilder::new().max_rect(rect));
@@ -62,7 +88,7 @@ impl Launcher {
             let count=APPS.iter().filter(|app|app.group==*group).count();
             text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(16.0,13.0),Vec2::new(width-62.0,22.0)),*title,15.0,foreground());
             text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(16.0,40.0),Vec2::new(width-32.0,18.0)),*description,11.0,muted());
-            ui.painter().text(rect.right_top()+Vec2::new(-20.0,24.0),egui::Align2::RIGHT_CENTER,count.to_string(),egui::FontId::proportional(14.0),readable_app_color(tint));
+            ui.painter().text(rect.right_top()+Vec2::new(-20.0,24.0),egui::Align2::RIGHT_CENTER,tr(count.to_string()),egui::FontId::proportional(14.0),readable_app_color(tint));
             response.widget_info(||egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel,true,active,*title));
             if response.clicked(){self.app_category=*group;}
         }
@@ -83,7 +109,7 @@ impl Launcher {
             .filter(|app|format!("{} {} {}",app.name,app.category,app.blurb).to_lowercase().contains(&query))
             .filter(|app|{let state=self.states.get(app.id);match self.filter.as_str(){"Installed"=>state.is_some_and(|s|s.installed.is_some()),"Available updates"=>state.is_some_and(|s|s.installed.is_some()&&s.latest.is_some()&&s.latest!=s.installed),_=>true}}).collect();
         ui.add_space(14.0);
-        ui.label(RichText::new(format!("{} apps  /  {}",apps.len(),if self.app_category==AppGroup::Creative{"Creative collection"}else{"Productivity collection"})).size(11.0).color(muted()));ui.add_space(10.0);
+        ui.label(RichText::new(tr(format!("{} apps  /  {}",apps.len(),if self.app_category==AppGroup::Creative{"Creative collection"}else{"Productivity collection"}))).size(11.0).color(muted()));ui.add_space(10.0);
         if apps.is_empty(){self.library_empty(ui,false);return;}
         egui::ScrollArea::vertical().id_salt("manager-redesign").show(ui,|ui|self.library_grid(ui,&apps,false));
     }
@@ -104,7 +130,7 @@ impl Launcher {
         egui::ScrollArea::vertical().id_salt("collection-redesign").show(ui,|ui|{
             for (group,label) in [(AppGroup::Creative,"Creative workspace"),(AppGroup::Office,"Productivity workspace")]{
                 let group_apps:Vec<_>=apps.iter().copied().filter(|a|a.group==group).collect();if group_apps.is_empty(){continue;}
-                ui.label(RichText::new(format!("{label}   /   {}",group_apps.len())).size(16.0).strong());ui.add_space(12.0);
+                ui.label(RichText::new(tr(format!("{label}   /   {}",group_apps.len()))).size(16.0).strong());ui.add_space(12.0);
                 self.library_grid(ui,&group_apps,true);ui.add_space(14.0);
             }
         });
@@ -136,7 +162,7 @@ impl Launcher {
         painter.rect_filled(band,egui::CornerRadius{nw:14,ne:14,sw:0,se:0},mix_color(panel(),app.tint,if light_theme(){0.13+hover*0.05}else{0.23+hover*0.07}));
         painter.rect_stroke(rect,14.0,egui::Stroke::new(1.0_f32,mix_color(border(),app.tint,0.20+hover*0.30)),egui::StrokeKind::Inside);
         let logo=egui::Rect::from_min_size(rect.min+Vec2::new(18.0,21.0),Vec2::splat(48.0));
-        if let Some(texture)=state.icon.as_ref(){painter.image(texture.id(),logo,egui::Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)),Color32::WHITE);}else{painter.rect_filled(logo,10.0,app.tint);painter.text(logo.center(),egui::Align2::CENTER_CENTER,&app.name[..1],egui::FontId::proportional(24.0),ink_for(app.tint));}
+        if let Some(texture)=state.icon.as_ref(){painter.image(texture.id(),logo,egui::Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.0,1.0)),Color32::WHITE);}else{painter.rect_filled(logo,10.0,app.tint);painter.text(logo.center(),egui::Align2::CENTER_CENTER,tr(&app.name[..1]),egui::FontId::proportional(24.0),ink_for(app.tint));}
         text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(80.0,22.0),Vec2::new(rect.width()-98.0,26.0)),app.name,20.0,foreground());
         text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(80.0,53.0),Vec2::new(rect.width()-98.0,18.0)),app.category,10.0,readable_app_color(app.tint));
         let status=if state.busy.is_some(){"Working"}else if state.error.is_some(){"Needs attention"}else if updating{"Update available"}else if installed{"Installed"}else if app.has_release{"Available to install"}else{"Coming soon"};
@@ -146,9 +172,9 @@ impl Launcher {
         let body=if let Some(error)=&state.error{error.clone()}else if let Some(progress)=&state.busy{progress.clone()}else if collection{
             let count=self.projects.iter().filter(|p|p.app.id==app.id).count();format!("{} project{}  /  Version {}",count,if count==1{""}else{"s"},state.installed.as_deref().unwrap_or("—"))
         }else{app.blurb.into()};
-        text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(18.0,136.0),Vec2::new(rect.width()-36.0,32.0)),body.clone(),12.0,if state.error.is_some(){status_color}else{muted()}).on_hover_text(body);
+        text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(18.0,136.0),Vec2::new(rect.width()-36.0,32.0)),body.clone(),12.0,if state.error.is_some(){status_color}else{muted()}).on_hover_text(tr(body));
         if !collection{
-            let version=if installed{format!("Installed {}  /  Latest {}",state.installed.as_deref().unwrap_or("—"),state.latest.as_deref().unwrap_or("Not checked"))}else{state.latest.as_ref().map(|v|format!("Latest version {v}")).unwrap_or_else(||if app.has_release{"Windows desktop app".into()}else{"No Windows release yet".into()})};
+            let version=if installed{format!("Installed {}  /  Latest {}",state.installed.as_deref().unwrap_or("—"),state.latest.as_deref().unwrap_or("Not checked"))}else{state.latest.as_ref().map(|v|format!("Latest version {v}")).unwrap_or_else(||if app.has_release{"Desktop app".into()}else{"No compatible release yet".into()})};
             text_at(ui,egui::Rect::from_min_size(rect.min+Vec2::new(18.0,184.0),Vec2::new(rect.width()-36.0,19.0)),version,11.0,muted());
         }
         let y=rect.bottom()-54.0;let left=rect.left()+18.0;

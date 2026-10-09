@@ -7,6 +7,18 @@ mod project_preview;
 mod suite_update;
 mod app_screens;
 mod app_workspace;
+mod localization;
+mod project_dialogs;
+mod onboarding;
+mod cloud_ui;
+mod plugins;
+mod plugin_ui;
+mod workspace_bridge;
+mod cloud;
+mod platform;
+#[cfg(target_os="linux")]
+mod linux_tray;
+use localization::tr;
 mod preview_formats;
 #[cfg(target_os = "windows")]
 mod preview_windows;
@@ -34,6 +46,7 @@ const ACCENT: Color32 = Color32::from_rgb(130, 99, 255);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
+    Cloud,
     Home,
     Apps,
     YourApps,
@@ -148,7 +161,7 @@ const APPS: &[AppInfo] = &[
         filetypes: &["wav", "aiff", "aif", "flac"],
         tint: Color32::from_rgb(15, 156, 145),
         group: AppGroup::Creative,
-        has_release: false,
+        has_release: true,
     },
     AppInfo {
         id: "cadcraft",
@@ -195,6 +208,8 @@ const APPS: &[AppInfo] = &[
 #[derive(Serialize, Deserialize)]
 #[serde(default)]
 struct Preferences {
+    onboarding_complete: bool,
+    language: String,
     automatic_updates: bool,
     automatic_suite_updates: bool,
     update_interval_hours: u64,
@@ -223,6 +238,8 @@ struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            onboarding_complete: false,
+            language: "en".into(),
             automatic_updates: true, automatic_suite_updates: true, update_interval_hours: 4,
             update_notifications: true, automatic_project_scan: true,
             project_scan_minutes: 3, reduce_motion: false, compact_sidebar: false, classic_sidebar: false, classic_app_screens: false, light_mode: false, minimize_to_tray: false, start_with_windows: false,
@@ -234,6 +251,7 @@ impl Default for Preferences {
 
 #[derive(Clone)]
 struct Project {
+    revision: u64,
     path: PathBuf,
     title: String,
     app: &'static AppInfo,
@@ -244,6 +262,7 @@ struct Project {
 }
 
 struct ProjectRename {
+    focused: bool,
     path: PathBuf,
     name: String,
 }
@@ -282,6 +301,7 @@ struct PendingLaunch {
 }
 
 enum Event {
+    PreviewChanges(bool),
     SuiteUpdateProgress(String),
     SuiteUpdateReady(Result<Option<suite_update::Prepared>, String>),
     TrayOpen,
@@ -295,8 +315,14 @@ enum Event {
 }
 
 struct Launcher {
+    plugins: plugins::Manager,
+    onboarding_step: usize,
+    onboarding_error: Option<String>,
+    cloud: cloud::Cloud,
     #[cfg(target_os = "windows")]
     tray: Option<windows_tray::Tray>,
+    #[cfg(target_os="linux")]
+    linux_tray: Option<linux_tray::Tray>,
     tray_failed: bool,
     silent_start: bool,
     tray_open_requested: bool,
@@ -341,6 +367,8 @@ struct Launcher {
     pending_launch: Option<PendingLaunch>,
     last_release_check: Instant,
     last_project_scan: Instant,
+    last_preview_check: Instant,
+    preview_check_busy: bool,
     manual_update_check: Option<ManualUpdateCheck>,
     startup_splash_started: Instant,
     startup_splash_initialized: bool,
@@ -393,6 +421,8 @@ impl Launcher {
             egui::TextureOptions::LINEAR,
         );
         let mut prefs = read_preferences();
+        localization::select(&prefs.language);
+        localization::install_fonts(&cc.egui_ctx);
         if !prefs
             .default_project_root
             .as_ref()
@@ -403,7 +433,7 @@ impl Launcher {
         }
         for root in &prefs.roots {
             for app in APPS {
-                let _ = fs::create_dir_all(root.join(app.name));
+                let _ = workspace_bridge::prepare(root, app);
             }
         }
         let mut states = HashMap::new();
@@ -424,6 +454,8 @@ impl Launcher {
         let mut launcher = Self {
             #[cfg(target_os = "windows")]
             tray: None,
+            #[cfg(target_os="linux")]
+            linux_tray: None,
             tray_failed: false,
             silent_start: prefs.start_with_windows && std::env::args().any(|arg| arg == "--tray"),
             tray_open_requested: false,
@@ -470,7 +502,13 @@ impl Launcher {
             pending_launch: None,
             last_release_check: Instant::now() - Duration::from_secs(4 * 60 * 60),
             last_project_scan: Instant::now(),
+            last_preview_check: Instant::now(),
+            preview_check_busy: false,
             manual_update_check: None,
+            plugins: plugins::Manager::default(),
+            onboarding_step: 0,
+            onboarding_error: None,
+            cloud: cloud::Cloud::new(),
             startup_splash_started: Instant::now(),
             startup_splash_initialized: false,
             startup_splash_window_shown: false,
@@ -487,7 +525,7 @@ impl Launcher {
         if !manual && self.suite_check_started.is_some_and(|at| at.elapsed() < Duration::from_secs(4 * 60 * 60)) { return; }
         self.suite_check_started = Some(Instant::now());
         self.suite_update_busy = true;
-        self.suite_update_status = "Checking GitHub releases...".into();
+        self.suite_update_status = if platform::flatpak(){"Checking the Flatpak update source..."}else{"Checking GitHub releases..."}.into();
         let tx = self.events_tx.clone();
         thread::spawn(move || {
             let result = suite_update::prepare(VERSION, |message| { let _ = tx.send(Event::SuiteUpdateProgress(message)); });
@@ -522,7 +560,7 @@ impl Launcher {
         if !app.has_release {
             self.manual_update_check = Some(ManualUpdateCheck {
                 app_id: app.id.to_owned(),
-                status: ManualUpdateStatus::Failed("No official Windows release is published yet. Check the source repository for release announcements.".into()),
+                status: ManualUpdateStatus::Failed("No official release is published yet. Check the source repository for release announcements.".into()),
             });
             return;
         }
@@ -549,12 +587,13 @@ impl Launcher {
         let mut close = false;
         let mut retry = false;
         let mut install = false;
-        egui::Window::new("Check for updates")
+        egui::Window::new(tr("Check for updates"))
             .id(egui::Id::new("manual-update-check"))
             .anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO)
             .collapsible(false)
             .resizable(false)
-            .default_width(390.0)
+            .title_bar(false)
+            .default_width(440.0)
             .open(&mut open)
             .frame(egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(16).inner_margin(22))
             .show(ctx, |ui| {
@@ -562,8 +601,8 @@ impl Launcher {
                 ui.horizontal(|ui| {
                     self.app_logo(ui, &app, 48.0);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(app.name).size(19.0).strong().color(foreground()));
-                        ui.label(RichText::new("Release status").size(12.0).color(muted()));
+                        ui.label(RichText::new(tr(app.name)).size(19.0).strong().color(foreground()));
+                        ui.label(RichText::new(tr("Release status")).size(12.0).color(muted()));
                     });
                 });
                 ui.add_space(16.0);
@@ -571,37 +610,37 @@ impl Launcher {
                     ManualUpdateStatus::Checking => {
                         ui.horizontal(|ui| {
                             ui.spinner();
-                            ui.label(RichText::new("Checking the latest release…").size(13.0).color(muted()));
+                            ui.label(RichText::new(tr("Checking the latest release…")).size(13.0).color(muted()));
                         });
                     }
                     ManualUpdateStatus::Current(version) => {
-                        ui.label(RichText::new("You’re up to date").size(15.0).strong().color(theme_rgb(108, 211, 153)));
-                        ui.label(RichText::new(format!("Latest version: {version}")).size(12.0).color(muted()));
+                        ui.label(RichText::new(tr("You’re up to date")).size(15.0).strong().color(theme_rgb(108, 211, 153)));
+                        ui.label(RichText::new(tr(format!("Latest version: {version}"))).size(12.0).color(muted()));
                     }
                     ManualUpdateStatus::Available(version) => {
-                        ui.label(RichText::new("An update is available").size(15.0).strong().color(ACCENT));
-                        ui.label(RichText::new(format!("Version {version} is ready to install.")).size(12.0).color(muted()));
+                        ui.label(RichText::new(tr("An update is available")).size(15.0).strong().color(ACCENT));
+                        ui.label(RichText::new(tr(format!("Version {version} is ready to install."))).size(12.0).color(muted()));
                     }
                     ManualUpdateStatus::Failed(error) => {
-                        ui.label(RichText::new("Couldn’t check for updates").size(15.0).strong().color(theme_rgb(255, 156, 135)));
-                        ui.label(RichText::new(error).size(12.0).color(muted()));
+                        ui.label(RichText::new(tr("Couldn’t check for updates")).size(15.0).strong().color(theme_rgb(255, 156, 135)));
+                        ui.label(RichText::new(tr(error)).size(12.0).color(muted()));
                     }
                 }
                 ui.add_space(18.0);
                 ui.horizontal(|ui| match &check.status {
                     ManualUpdateStatus::Checking => {
-                        if ui.button("Close").clicked() { close = true; }
+                        if ui.button(tr("Close")).clicked() { close = true; }
                     }
                     ManualUpdateStatus::Current(_) => {
                         if app_primary_button(ui, "Done", app.tint).clicked() { close = true; }
                     }
                     ManualUpdateStatus::Available(_) => {
                         if app_primary_button(ui, if installed { "Install update" } else { "Install app" }, app.tint).clicked() { install = true; }
-                        if ui.button("Later").clicked() { close = true; }
+                        if ui.button(tr("Later")).clicked() { close = true; }
                     }
                     ManualUpdateStatus::Failed(_) => {
                         if app_primary_button(ui, "Try again", app.tint).clicked() { retry = true; }
-                        if ui.button("Close").clicked() { close = true; }
+                        if ui.button(tr("Close")).clicked() { close = true; }
                     }
                 });
             });
@@ -678,7 +717,7 @@ impl Launcher {
         let already_watched = self.prefs.roots.contains(&path);
         let mut failed = Vec::new();
         for app in APPS {
-            if let Err(error) = fs::create_dir_all(path.join(app.name)) {
+            if let Err(error) = workspace_bridge::prepare(&path, app) {
                 failed.push(format!("{} ({error})", app.name));
             }
         }
@@ -742,13 +781,20 @@ impl Launcher {
             ));
             return;
         };
+        if let Some(root) = &self.prefs.default_project_root {
+            if let Err(error) = plugins::prepare_launch(&app, root) {
+                self.toast = Some(format!("Could not prepare {} workspace: {error}", app.name));
+                return;
+            }
+        }
         let working_directory = self
             .prefs
             .default_project_root
             .as_ref()
-            .map(|root| root.join(app.name))
+            .map(|root| root.join(app.name).join("Projects"))
             .filter(|path| fs::create_dir_all(path).is_ok())
             .unwrap_or(directory);
+        warm_launch_files(exe.clone());
         self.pending_launch = Some(PendingLaunch {
             app: app_by_id(app.id).expect("app exists"),
             executable: exe,
@@ -763,16 +809,21 @@ impl Launcher {
         let Some(pending) = self.pending_launch.clone() else {
             return;
         };
-        let duration = Duration::from_secs(5);
+        let duration = Duration::from_secs(3);
         let progress = (pending.started.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
         if progress >= 1.0 {
             self.pending_launch = None;
             let mut command = Command::new(&pending.executable);
             command.current_dir(&pending.working_directory);
+            if let Some(root) = &self.prefs.default_project_root {
+                if let Err(error) = workspace_bridge::launch_environment(&mut command, root, pending.app) {
+                    self.toast = Some(error); return;
+                }
+            }
             if let Some(path) = pending.file.as_deref() {
                 command.arg(path);
             }
-            self.toast = match command.spawn() {
+            self.toast = match platform::spawn(&mut command) {
                 Ok(_) => Some(format!("Opening {}...", pending.app.name)),
                 Err(error) => Some(format!("Could not launch {}: {error}", pending.app.name)),
             };
@@ -789,62 +840,14 @@ impl Launcher {
             ))
             .collect();
         let selected_icon = self.states.get(app.id).and_then(|state| state.icon.as_ref()).map(egui::TextureHandle::id);
-        let phase = if self.prefs.reduce_motion { 0.0 } else { pending.started.elapsed().as_secs_f32() * 0.9 };
-        let pulse = if self.prefs.reduce_motion { 1.0 } else { 1.0 + 0.018 * (pending.started.elapsed().as_secs_f32() * 2.3).sin() };
         egui::Modal::new(egui::Id::new("app-launch-splash"))
             .backdrop_color(Color32::from_black_alpha(205))
             .frame(egui::Frame::new().fill(Color32::TRANSPARENT).inner_margin(0))
             .show(ctx, |ui| {
                 let (card, _) = ui.allocate_exact_size(Vec2::new(700.0, 420.0), egui::Sense::hover());
-                let painter = ui.painter_at(card);
-                let dark = mix_color(Color32::from_rgb(28, 22, 48), app.tint, 0.38);
-                let left_panel = egui::Rect::from_min_max(card.min, egui::pos2(card.left() + 242.0, card.bottom()));
-                painter.rect_filled(card, 18.0, dark);
-                painter.rect_filled(left_panel, 18.0, Color32::from_rgb(250, 250, 252));
-                painter.rect_filled(egui::Rect::from_min_max(egui::pos2(left_panel.left() + 18.0, left_panel.top()), left_panel.right_bottom()), 0.0, Color32::from_rgb(250, 250, 252));
-                painter.rect_stroke(card, 18.0, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.65)), egui::StrokeKind::Inside);
-
-                let left = left_panel;
-                let app_mark = egui::Rect::from_min_size(left.min + Vec2::new(28.0, 30.0), Vec2::splat(38.0));
-                if let Some(texture) = selected_icon {
-                    painter.image(texture, app_mark, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-                } else {
-                    painter.rect_filled(app_mark, 9.0, app.tint);
-                    painter.text(app_mark.center(), egui::Align2::CENTER_CENTER, app.name.chars().next().unwrap_or('?'), egui::FontId::proportional(22.0), Color32::WHITE);
-                }
-                painter.text(left.left_top() + Vec2::new(28.0, 94.0), egui::Align2::LEFT_TOP, app.category.to_uppercase(), egui::FontId::proportional(10.0), app.tint);
-                painter.text(left.left_top() + Vec2::new(28.0, 119.0), egui::Align2::LEFT_TOP, format!("{}\nis getting ready.", app.name), egui::FontId::proportional(23.0), Color32::from_rgb(25, 26, 30));
-                painter.text(left.left_top() + Vec2::new(28.0, 184.0), egui::Align2::LEFT_TOP, app.blurb, egui::FontId::proportional(12.0), Color32::from_rgb(91, 94, 101));
-                painter.text(left.left_top() + Vec2::new(28.0, 267.0), egui::Align2::LEFT_TOP, "PREPARING YOUR WORKSPACE", egui::FontId::proportional(10.0), Color32::from_rgb(124, 127, 134));
-                let track = egui::Rect::from_min_size(left.left_top() + Vec2::new(28.0, 291.0), Vec2::new(184.0, 7.0));
-                painter.rect_filled(track, 4.0, Color32::from_rgb(226, 226, 231));
-                painter.rect_filled(egui::Rect::from_min_max(track.min, egui::pos2(track.left() + track.width() * progress, track.bottom())), 4.0, app.tint);
-                painter.text(left.left_bottom() + Vec2::new(28.0, -26.0), egui::Align2::LEFT_BOTTOM, "A creative workspace by ArtCraft", egui::FontId::proportional(11.0), Color32::from_rgb(133, 136, 142));
-
-                let center = egui::pos2(card.left() + 471.0, card.center().y + 4.0);
-                painter.circle_filled(center, 112.0 * pulse, mix_color(dark, app.tint, 0.34));
-                painter.circle_filled(center + Vec2::new(7.0 * phase.cos(), 5.0 * phase.sin()), 76.0, mix_color(app.tint, Color32::WHITE, 0.20));
-                for (index, (texture, tint, initial)) in app_icons.iter().enumerate() {
-                    let angle = (if self.prefs.reduce_motion { 0.0 } else { phase }) + std::f32::consts::TAU * index as f32 / app_icons.len() as f32 - std::f32::consts::FRAC_PI_2;
-                    let orbit = center + Vec2::new(angle.cos(), angle.sin()) * 112.0;
-                    let tile = egui::Rect::from_center_size(orbit, Vec2::splat(34.0));
-                    painter.rect_filled(tile, 8.0, *tint);
-                    if let Some(texture) = texture {
-                        painter.image(*texture, tile.shrink(1.5), egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-                    } else {
-                        painter.text(tile.center(), egui::Align2::CENTER_CENTER, initial.to_string(), egui::FontId::proportional(17.0), Color32::WHITE);
-                    }
-                    painter.rect_stroke(tile, 8.0, egui::Stroke::new(1.0_f32, Color32::from_white_alpha(100)), egui::StrokeKind::Inside);
-                }
-                let mark = egui::Rect::from_center_size(center, Vec2::splat(80.0));
-                if let Some(texture) = selected_icon {
-                    painter.image(texture, mark, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-                } else {
-                    painter.rect_filled(mark, 16.0, app.tint);
-                    painter.text(mark.center(), egui::Align2::CENTER_CENTER, app.name.chars().next().unwrap_or('?'), egui::FontId::proportional(44.0), Color32::WHITE);
-                }
-                painter.text(card.right_top() + Vec2::new(-28.0, 25.0), egui::Align2::RIGHT_TOP, format!("WELCOME TO {}", app.name.to_uppercase()), egui::FontId::proportional(10.0), Color32::from_rgba_unmultiplied(255, 255, 255, 190));
-                painter.text(card.right_bottom() + Vec2::new(-28.0, -25.0), egui::Align2::RIGHT_BOTTOM, format!("Your {} studio is opening.", app.category.to_lowercase()), egui::FontId::proportional(11.0), Color32::from_rgba_unmultiplied(255, 255, 255, 210));
+                paint_suite_splash(&ui.painter_at(card), card, app.tint, selected_icon,
+                    app.name, &app.category.to_uppercase(), &format!("{}\nis getting ready.", app.name),
+                    app.blurb, &app_icons, progress, self.prefs.reduce_motion);
             });
         ctx.request_repaint_after(Duration::from_millis(16));
     }
@@ -855,7 +858,6 @@ impl Launcher {
                 self.startup_splash_centered = true;
             }
         }
-        let elapsed = self.startup_splash_started.elapsed();
         let logo = self.brand_icon.id();
         let app_icons: Vec<_> = self.orbit_apps
             .iter()
@@ -871,43 +873,11 @@ impl Launcher {
             })
             .collect();
         egui::CentralPanel::default().frame(egui::Frame::new().fill(Color32::from_rgb(28, 22, 48)).inner_margin(0)).show(ctx, |ui| {
-                let rect = ui.max_rect();
-                ui.painter().rect_filled(rect, 18.0, Color32::from_rgb(28, 22, 48));
-                let left = egui::Rect::from_min_max(rect.min, egui::pos2(rect.left() + 242.0, rect.bottom()));
-                ui.painter().rect_filled(left, 18.0, Color32::from_rgb(250, 250, 252));
-                ui.painter().rect_filled(egui::Rect::from_min_max(egui::pos2(left.right() - 18.0, left.top()), left.right_bottom()), 0.0, Color32::from_rgb(250, 250, 252));
-                let logo_rect = egui::Rect::from_min_size(left.min + Vec2::new(28.0, 30.0), Vec2::splat(38.0));
-                ui.painter().image(logo, logo_rect, egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0)), Color32::WHITE);
-                ui.painter().text(left.left_top()+Vec2::new(28.0,95.0),egui::Align2::LEFT_TOP,"ARTCRAFT MASTER SUITE",egui::FontId::proportional(10.0),ACCENT);
-                ui.painter().text(left.left_top()+Vec2::new(28.0,120.0),egui::Align2::LEFT_TOP,"Your creative desk\nis getting ready.",egui::FontId::proportional(23.0),Color32::from_rgb(25,26,30));
-                ui.painter().text(left.left_top()+Vec2::new(28.0,184.0),egui::Align2::LEFT_TOP,"Bringing your apps and\nprojects together.",egui::FontId::proportional(12.0),Color32::from_rgb(91,94,101));
-                ui.painter().text(left.left_top()+Vec2::new(28.0,267.0),egui::Align2::LEFT_TOP,"PREPARING YOUR WORKSPACE",egui::FontId::proportional(10.0),Color32::from_rgb(124,127,134));
-                let track = egui::Rect::from_min_size(left.left_top()+Vec2::new(28.0,291.0),Vec2::new(184.0,7.0));
-                ui.painter().rect_filled(track, 4.0, Color32::from_rgb(226, 226, 231));
-                ui.painter().rect_filled(egui::Rect::from_min_max(track.min, egui::pos2(track.left()+track.width()*progress,track.bottom())),4.0,ACCENT);
-                ui.painter().text(left.left_bottom()+Vec2::new(28.0,-26.0),egui::Align2::LEFT_BOTTOM,"A creative workspace by ArtCraft",egui::FontId::proportional(11.0),Color32::from_rgb(133,136,142));
-                let center = egui::pos2(rect.left()+470.0, rect.center().y+4.0);
-                let phase = if self.prefs.reduce_motion { 0.0 } else { elapsed.as_secs_f32()*0.9 };
-                let pulse = if self.prefs.reduce_motion { 1.0 } else { 1.0 + 0.018 * (elapsed.as_secs_f32() * 2.3).sin() };
-                ui.painter().circle_filled(center, 112.0 * pulse, Color32::from_rgb(62,49,103));
-                ui.painter().circle_filled(center+Vec2::new(7.0*phase.cos(),5.0*phase.sin()),76.0,Color32::from_rgb(86,67,142));
-                for (index, (texture, tint, initial)) in app_icons.iter().enumerate() {
-                    let angle = (if self.prefs.reduce_motion { 0.0 } else { phase }) + std::f32::consts::TAU * index as f32 / app_icons.len() as f32 - std::f32::consts::FRAC_PI_2;
-                    let orbit = center + Vec2::new(angle.cos(), angle.sin()) * 112.0;
-                    let tile = egui::Rect::from_center_size(orbit, Vec2::splat(34.0));
-                    ui.painter().rect_filled(tile, 8.0, *tint);
-                    if let Some(texture) = texture {
-                        ui.painter().image(*texture, tile.shrink(1.5), egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0)), Color32::WHITE);
-                    } else {
-                        ui.painter().text(tile.center(), egui::Align2::CENTER_CENTER, initial.to_string(), egui::FontId::proportional(17.0), Color32::WHITE);
-                    }
-                    ui.painter().rect_stroke(tile, 8.0, egui::Stroke::new(1.0_f32, Color32::from_white_alpha(100)), egui::StrokeKind::Inside);
-                }
-                let mark = egui::Rect::from_center_size(center,Vec2::splat(80.0));
-                ui.painter().image(logo,mark,egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0)),Color32::WHITE);
-                ui.painter().text(rect.right_top()+Vec2::new(-28.0,25.0),egui::Align2::RIGHT_TOP,"WELCOME TO ARTCRAFT",egui::FontId::proportional(10.0),Color32::from_rgba_unmultiplied(255,255,255,190));
-                ui.painter().text(rect.right_bottom()+Vec2::new(-28.0,-25.0),egui::Align2::RIGHT_BOTTOM,"Creative and office tools. One place to start.",egui::FontId::proportional(11.0),Color32::from_rgba_unmultiplied(255,255,255,210));
-            });
+            let rect = ui.max_rect();
+            paint_suite_splash(ui.painter(), rect, ACCENT, Some(logo), "ArtCraft Master Suite",
+                "ARTCRAFT MASTER SUITE", "Your creative desk\nis getting ready.",
+                "Bringing your apps and projects together.", &app_icons, progress, self.prefs.reduce_motion);
+        });
     }
 
     fn draw_resize_handles(&self, ctx: &egui::Context) {
@@ -976,7 +946,7 @@ impl Launcher {
                 matches!(character, '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*')
             })
         {
-            self.toast = Some("Enter a project name that is valid for Windows files.".into());
+            self.toast = Some("Enter a project name that is valid for project files.".into());
             return;
         }
         let filename = match path.extension().and_then(|extension| extension.to_str()) {
@@ -1026,6 +996,10 @@ impl Launcher {
     fn process_events(&mut self) {
         while let Ok(event) = self.events_rx.try_recv() {
             match event {
+                Event::PreviewChanges(changed) => {
+                    self.preview_check_busy = false;
+                    if changed { self.scan_projects(); }
+                }
                 Event::SuiteUpdateProgress(message) => {
                     self.suite_update_status = message.clone();
                     self.toast = Some(message.clone()); self.persistent_toast = Some(message);
@@ -1034,7 +1008,7 @@ impl Launcher {
                     self.suite_update_busy = false;
                     match result {
                         Ok(Some(update)) => {
-                            self.suite_update_status = format!("Master Suite {} is ready. Restarting 10 seconds after current work finishes.", update.version);
+                            self.suite_update_status = if self.prefs.automatic_suite_updates{format!("Master Suite {} is ready. Restarting 10 seconds after current work finishes.", update.version)}else{format!("Master Suite {} is ready. Choose Install and restart to apply it.",update.version)};
                             self.toast = Some(self.suite_update_status.clone()); self.persistent_toast = self.toast.clone();
                             self.suite_update_ready = Some((update, Instant::now()));
                         }
@@ -1125,7 +1099,7 @@ impl Launcher {
                     self.project_previews.retain(|path, _| {
                         let old = self.projects.iter().find(|p| &p.path == path);
                         let new = projects.iter().find(|p| &p.path == path);
-                        matches!((old, new), (Some(a), Some(b)) if a.modified == b.modified && a.size_bytes == b.size_bytes)
+                        matches!((old, new), (Some(a), Some(b)) if a.revision == b.revision && match (&a.preview, &b.preview) { (Some(a), Some(b)) => Arc::ptr_eq(a, b), (None, None) => true, _ => false })
                     });
                     self.projects = projects;
                     self.prefs.scanning = false;
@@ -1158,17 +1132,17 @@ impl Launcher {
                     );
                     if !self.sidebar_collapsed { ui.vertical(|ui| {
                         ui.label(
-                            RichText::new("ArtCraft")
+                            RichText::new(tr("ArtCraft"))
                                 .size(16.0)
                                 .strong()
                                 .color(foreground()),
                         );
-                        ui.label(RichText::new("MASTER SUITE").size(9.0).strong().color(muted()));
+                        ui.label(RichText::new(tr("MASTER SUITE")).size(9.0).strong().color(muted()));
                     }); }
                     });
                     let toggle_size = if self.sidebar_collapsed { 20.0 } else { 28.0 };
                     let (toggle_rect, toggle_response) = ui.allocate_exact_size(Vec2::splat(toggle_size), egui::Sense::click());
-                    let toggle_response = toggle_response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if self.sidebar_collapsed { "Expand sidebar" } else { "Collapse sidebar" });
+                    let toggle_response = toggle_response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(if self.sidebar_collapsed { "Expand sidebar" } else { "Collapse sidebar" }));
                     if toggle_response.hovered() { ui.painter().rect_filled(toggle_rect, 6.0, theme_rgb(39, 41, 48)); }
                     let center = toggle_rect.center();
                     let direction = if self.sidebar_collapsed { 1.0 } else { -1.0 };
@@ -1178,7 +1152,7 @@ impl Launcher {
                     if toggle_response.clicked() { self.sidebar_collapsed = !self.sidebar_collapsed; self.prefs.compact_sidebar = self.sidebar_collapsed; save_preferences(&self.prefs); }
                 });
                 ui.add_space(if self.sidebar_collapsed { 20.0 } else { 28.0 });
-                if !self.sidebar_collapsed { ui.label(RichText::new("WORKSPACE").size(10.0).strong().color(muted())); ui.add_space(7.0); }
+                if !self.sidebar_collapsed { ui.label(RichText::new(tr("WORKSPACE")).size(10.0).strong().color(muted())); ui.add_space(7.0); }
                 self.side_link(ui, Page::Home, "Home", None);
                 self.side_link(
                     ui,
@@ -1199,12 +1173,13 @@ impl Launcher {
                 );
                 self.side_link(ui, Page::YourApps, "Your apps", Some(self.states.values().filter(|s| s.installed.is_some()).count()));
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
+                    self.side_link(ui, Page::Cloud, "Cloud", None);
                     self.side_link(ui, Page::Settings, "Settings", None);
                     ui.add_space(12.0);
                     ui.separator();
                     if self.sidebar_collapsed {
                         let (status_rect, status_response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 22.0), egui::Sense::hover());
-                        status_response.on_hover_text("Local to this device");
+                        status_response.on_hover_text(tr("Local to this device"));
                         ui.painter().circle_filled(status_rect.center(), 3.5, theme_rgb(89, 204, 135));
                         return;
                     }
@@ -1212,7 +1187,7 @@ impl Launcher {
                         let (dot, _) = ui.allocate_exact_size(Vec2::splat(10.0), egui::Sense::hover());
                         ui.painter().circle_filled(dot.center(), 3.0, theme_rgb(89, 204, 135));
                         ui.label(
-                            RichText::new("Local to this device")
+                            RichText::new(tr("Local to this device"))
                                 .size(11.0)
                                 .color(muted()),
                         );
@@ -1231,28 +1206,29 @@ impl Launcher {
                 let mark = egui::Rect::from_center_size(if compact { brand.center() } else { brand.left_center() + Vec2::new(27.0, 0.0) }, Vec2::splat(30.0));
                 ui.painter().image(self.brand_icon.id(), mark, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                 if !compact {
-                    ui.painter().text(brand.left_center() + Vec2::new(53.0, -10.0), egui::Align2::LEFT_CENTER, "ArtCraft", egui::FontId::proportional(19.0), foreground());
-                    ui.painter().text(brand.left_center() + Vec2::new(53.0, 12.0), egui::Align2::LEFT_CENTER, "MASTER SUITE", egui::FontId::proportional(10.0), muted());
+                    ui.painter().text(brand.left_center() + Vec2::new(53.0, -10.0), egui::Align2::LEFT_CENTER,tr("ArtCraft"), egui::FontId::proportional(19.0), foreground());
+                    ui.painter().text(brand.left_center() + Vec2::new(53.0, 12.0), egui::Align2::LEFT_CENTER,tr("MASTER SUITE"), egui::FontId::proportional(10.0), muted());
                 }
                 let (toggle, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 28.0), egui::Sense::click());
-                let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if compact { "Expand navigation" } else { "Collapse navigation" });
+                let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(if compact { "Expand navigation" } else { "Collapse navigation" }));
                 if response.hovered() { ui.painter().rect_filled(toggle, 7.0, card()); }
                 let icon = egui::Rect::from_center_size(if compact { toggle.center() } else { toggle.left_center() + Vec2::new(25.0, 0.0) }, Vec2::new(15.0, 12.0));
                 ui.painter().rect_stroke(icon, 2.0, egui::Stroke::new(1.2_f32, muted()), egui::StrokeKind::Inside);
                 ui.painter().line_segment([icon.left_top() + Vec2::new(5.0, 0.0), icon.left_bottom() + Vec2::new(5.0, 0.0)], egui::Stroke::new(1.2_f32, muted()));
-                if !compact { ui.painter().text(toggle.left_center() + Vec2::new(44.0, 0.0), egui::Align2::LEFT_CENTER, "Collapse navigation", egui::FontId::proportional(11.0), muted()); }
+                if !compact { ui.painter().text(toggle.left_center() + Vec2::new(44.0, 0.0), egui::Align2::LEFT_CENTER,tr("Collapse navigation"), egui::FontId::proportional(11.0), muted()); }
                 if response.clicked() { self.sidebar_collapsed = !compact; self.prefs.compact_sidebar = self.sidebar_collapsed; save_preferences(&self.prefs); }
                 ui.add_space(18.0);
                 let installed = self.states.values().filter(|s| s.installed.is_some()).count();
                 let navigation_height = (ui.available_height() - if compact { 66.0 } else { 132.0 }).max(60.0);
                 egui::ScrollArea::vertical().id_salt("modern-navigation").max_height(navigation_height).show(ui, |ui| {
-                if !compact { ui.label(RichText::new("  WORKSPACE").size(10.0).strong().color(muted())); ui.add_space(5.0); }
+                if !compact { ui.label(RichText::new(tr("  WORKSPACE")).size(10.0).strong().color(muted())); ui.add_space(5.0); }
                 self.modern_side_link(ui, Page::Home, "Home", "Your creative overview", None);
                 self.modern_side_link(ui, Page::YourApps, "Your apps", "Open your collection", Some(installed));
                 self.modern_side_link(ui, Page::Projects, "Projects", "Pick up where you left off", Some(self.projects.len()));
                 ui.add_space(18.0);
-                if !compact { ui.label(RichText::new("  TOOLS").size(10.0).strong().color(muted())); ui.add_space(5.0); }
+                if !compact { ui.label(RichText::new(tr("  TOOLS")).size(10.0).strong().color(muted())); ui.add_space(5.0); }
                 self.modern_side_link(ui, Page::Apps, "App Manager", "Discover, install & update", None);
+                self.modern_side_link(ui, Page::Cloud, "Cloud", "Your project backups", None);
                 });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     self.modern_side_link(ui, Page::Settings, "Settings", "Make it yours", None);
@@ -1261,8 +1237,8 @@ impl Launcher {
                         let (status, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 48.0), egui::Sense::hover());
                         ui.painter().rect_filled(status, 10.0, theme_rgb(30, 33, 40));
                         ui.painter().circle_filled(status.left_center() + Vec2::new(17.0, 0.0), 3.0, theme_rgb(100, 206, 163));
-                        ui.painter().text(status.left_center() + Vec2::new(30.0, -8.0), egui::Align2::LEFT_CENTER, "Your local workspace", egui::FontId::proportional(11.0), theme_rgb(210, 214, 223));
-                        ui.painter().text(status.left_center() + Vec2::new(30.0, 9.0), egui::Align2::LEFT_CENTER, format!("{installed} apps installed"), egui::FontId::proportional(10.0), muted());
+                        ui.painter().text(status.left_center() + Vec2::new(30.0, -8.0), egui::Align2::LEFT_CENTER,tr("Your local workspace"), egui::FontId::proportional(11.0), theme_rgb(210, 214, 223));
+                        ui.painter().text(status.left_center() + Vec2::new(30.0, 9.0), egui::Align2::LEFT_CENTER,tr(format!("{installed} apps installed")), egui::FontId::proportional(10.0), muted());
                     }
                 });
             });
@@ -1274,7 +1250,7 @@ impl Launcher {
         let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), if compact { 46.0 } else { 58.0 }), egui::Sense::click());
         let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
         response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, label));
-        if compact { response.clone().on_hover_text(label); }
+        if compact { response.clone().on_hover_text(tr(label)); }
         let hover = if self.prefs.reduce_motion { if response.hovered() { 1.0 } else { 0.0 } } else { ui.ctx().animate_bool(response.id, response.hovered()) };
         let base = if selected { theme_rgb(48, 42, 72) } else { theme_rgb(23, 24, 30) };
         ui.painter().rect_filled(rect, 11.0, mix_color(base, theme_rgb(58, 55, 75), hover * 0.45));
@@ -1290,12 +1266,13 @@ impl Launcher {
             for y in [-3.0, 3.0] { ui.painter().line_segment([center + Vec2::new(-4.0, y), center + Vec2::new(4.0, y)], egui::Stroke::new(1.5_f32, color)); }
         } else { paint_navigation_icon(ui.painter(), egui::Rect::from_center_size(center, Vec2::splat(18.0)), page, color); }
         if !compact {
-            ui.painter().text(rect.left_center() + Vec2::new(45.0, -9.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(14.0), if selected { foreground() } else { theme_rgb(218, 221, 230) });
-            ui.painter().text(rect.left_center() + Vec2::new(45.0, 11.0), egui::Align2::LEFT_CENTER, description, egui::FontId::proportional(10.0), muted());
+            let width = rect.width() - if count.is_some() { 102.0 } else { 58.0 };
+            app_screens::text_at(ui, egui::Rect::from_min_size(rect.left_top()+Vec2::new(45.0,9.0),Vec2::new(width,22.0)), label, 14.0, foreground()).on_hover_text(tr(label));
+            app_screens::text_at(ui, egui::Rect::from_min_size(rect.left_top()+Vec2::new(45.0,33.0),Vec2::new(width,17.0)), description, 10.0, muted()).on_hover_text(tr(description));
             if let Some(count) = count {
                 let badge = egui::Rect::from_center_size(rect.right_center() + Vec2::new(-28.0, 0.0), Vec2::new(28.0, 22.0));
                 ui.painter().rect_filled(badge, 6.0, if selected { theme_rgb(68, 55, 99) } else { theme_rgb(37, 40, 49) });
-                ui.painter().text(badge.center(), egui::Align2::CENTER_CENTER, if count > 99 { "99+".into() } else { count.to_string() }, egui::FontId::proportional(10.0), muted());
+                ui.painter().text(badge.center(), egui::Align2::CENTER_CENTER,tr(if count > 99 { "99+".into() } else { count.to_string() }), egui::FontId::proportional(10.0), muted());
             }
         }
         if response.clicked() { self.page = page; }
@@ -1311,7 +1288,7 @@ impl Launcher {
         let selected = self.page == page || (matches!(self.page, Page::App(_)) && self.detail_parent == page);
         if self.sidebar_collapsed {
             let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 38.0), egui::Sense::click());
-            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(label);
+            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(label));
             let selected_t = ui.ctx().animate_bool(response.id.with("selected"), selected);
             let hover_t = ui.ctx().animate_bool(response.id.with("hover"), response.hovered());
             let fill = mix_color(mix_color(theme_rgb(22, 23, 27), theme_rgb(34, 35, 41), hover_t * 0.72), theme_rgb(47, 42, 68), selected_t);
@@ -1340,10 +1317,10 @@ impl Launcher {
         let icon_tint = mix_color(muted(), ACCENT, selected_t);
         paint_navigation_icon(&row.painter(), icon_rect, page, icon_tint);
         row.add_space(10.0);
-        row.label(RichText::new(label).size(13.0).color(mix_color(muted(), foreground(), selected_t)));
+        row.label(RichText::new(tr(label)).size(13.0).color(mix_color(muted(), foreground(), selected_t)));
         if let Some(n) = count {
             row.with_layout(egui::Layout::right_to_left(egui::Align::Center), |row| {
-                row.label(RichText::new(n.to_string()).size(11.0).color(muted()));
+                row.label(RichText::new(tr(n.to_string())).size(11.0).color(muted()));
             });
         }
         if response.clicked() {
@@ -1367,8 +1344,7 @@ impl Launcher {
                 .rect_filled(rect, 12, app.tint.gamma_multiply(0.18));
             ui.painter().text(
                 rect.center(),
-                egui::Align2::CENTER_CENTER,
-                app.name.chars().next().unwrap_or('?'),
+                egui::Align2::CENTER_CENTER,tr(app.name.chars().next().unwrap_or('?')),
                 egui::FontId::proportional(size * 0.52),
                 app.tint,
             );
@@ -1377,7 +1353,7 @@ impl Launcher {
 
     fn project_thumbnail_at(&mut self, ui: &mut egui::Ui, project: &Project, size: Vec2) {
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
-        response.on_hover_text(project.preview_note);
+        response.on_hover_text(tr(project.preview_note));
         ui.painter().rect_filled(rect, 7.0, card());
         if let Some(preview) = project.preview.as_ref() {
             let texture = self.project_previews.entry(project.path.clone()).or_insert_with(|| {
@@ -1423,15 +1399,13 @@ impl Launcher {
         } else {
             ui.painter().text(
                 rect.center(),
-                egui::Align2::CENTER_CENTER,
-                project.app.name.chars().next().unwrap_or('?'),
+                egui::Align2::CENTER_CENTER,tr(project.app.name.chars().next().unwrap_or('?')),
                 egui::FontId::proportional(26.0),
                 muted(),
             );
         }
         if project.preview.is_none() && size.y >= 88.0 && size.x >= 160.0 {
-            ui.painter().text(egui::pos2(rect.center().x, rect.bottom() - 12.0), egui::Align2::CENTER_CENTER,
-                "Preview unavailable", egui::FontId::proportional(10.0), muted());
+            ui.painter().text(egui::pos2(rect.center().x, rect.bottom() - 12.0), egui::Align2::CENTER_CENTER,tr("Preview unavailable"), egui::FontId::proportional(10.0), muted());
         }
     }
 
@@ -1448,13 +1422,13 @@ impl Launcher {
                     self.app_logo(ui, &app, 48.0);
                     ui.vertical(|ui| {
                         ui.label(
-                            RichText::new(app.name)
+                            RichText::new(tr(app.name))
                                 .size(16.0)
                                 .strong()
                                 .color(foreground()),
                         );
                         ui.label(
-                            RichText::new(app.category)
+                            RichText::new(tr(app.category))
                                 .size(10.5)
                                 .strong()
                                 .color(readable_app_color(app.tint)),
@@ -1469,13 +1443,13 @@ impl Launcher {
                         let (dot, _) = ui.allocate_exact_size(Vec2::splat(7.0), egui::Sense::hover());
                         ui.painter().circle_filled(dot.center(), 3.0, dot_color);
                         ui.label(
-                            RichText::new(if !app.has_release && state.installed.is_none() {
+                            RichText::new(tr(if !app.has_release && state.installed.is_none() {
                                 "Coming soon"
                             } else if state.installed.is_some() {
                                 "Installed"
                             } else {
                                 "Not installed"
-                            })
+                            }))
                             .size(12.0)
                             .color(muted()),
                         );
@@ -1483,10 +1457,10 @@ impl Launcher {
                 });
                 ui.add_space(10.0);
                 ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 36.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.label(RichText::new(app.blurb).size(13.0).color(muted()));
+                    ui.label(RichText::new(tr(app.blurb)).size(13.0).color(muted()));
                 });
                 ui.add_space(7.0);
-                let latest = if !app.has_release && state.installed.is_none() { "No Windows release yet".to_owned() } else { state
+                let latest = if !app.has_release && state.installed.is_none() { "No compatible release yet".to_owned() } else { state
                     .latest
                     .as_deref()
                     .map(|v| format!("Latest  v{v}"))
@@ -1495,15 +1469,15 @@ impl Launcher {
                     .installed
                     .as_deref()
                     .map(|v| format!("Installed  v{v}"))
-                    .unwrap_or_else(|| "Official Windows portable build".into());
+                    .unwrap_or_else(|| "Official desktop build".into());
                 ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(installed).size(11.5).color(muted()));
-                    ui.label(RichText::new(latest).size(11.5).color(muted()));
+                    ui.label(RichText::new(tr(installed)).size(11.5).color(muted()));
+                    ui.label(RichText::new(tr(latest)).size(11.5).color(muted()));
                 });
                 if let Some(error) = &state.error {
                     ui.add_space(5.0);
                     ui.label(
-                        RichText::new(error)
+                        RichText::new(tr(error))
                             .size(11.0)
                             .color(theme_rgb(255, 156, 135)),
                     );
@@ -1512,7 +1486,7 @@ impl Launcher {
                     ui.add_space(8.0);
                     ui.horizontal_wrapped(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new(progress).size(12.0).color(muted()));
+                        ui.label(RichText::new(tr(progress)).size(12.0).color(muted()));
                     });
                 } else {
                     ui.add_space(9.0);
@@ -1540,7 +1514,7 @@ impl Launcher {
                                     self.install(app);
                                 }
                             } else {
-                                ui.add_enabled(false, egui::Button::new("No Windows release yet"));
+                                ui.add_enabled(false, egui::Button::new(tr("No compatible release yet")));
                             }
                             if icon_button(ui, ButtonIcon::Help, "App details", muted()).clicked() {
                                 self.page = Page::App(app.id);
@@ -1553,19 +1527,19 @@ impl Launcher {
 
     fn heading(&self, ui: &mut egui::Ui, eyebrow: &str, title: &str, subtitle: &str) {
         ui.label(
-            RichText::new(eyebrow.to_uppercase())
+            RichText::new(tr(eyebrow.to_uppercase()))
                 .size(11.0)
                 .strong()
                 .color(ACCENT),
         );
         ui.add_space(3.0);
         ui.label(
-            RichText::new(title)
+            RichText::new(tr(title))
                 .size(29.0)
                 .strong()
                 .color(foreground()),
         );
-        ui.label(RichText::new(subtitle).size(13.0).color(muted()));
+        ui.label(RichText::new(tr(subtitle)).size(13.0).color(muted()));
         ui.add_space(19.0);
     }
 
@@ -1583,9 +1557,9 @@ impl Launcher {
             let block_top = banner.center().y - 66.0;
             let text_rect = egui::Rect::from_min_max(egui::pos2(banner.left()+26.0, block_top), egui::pos2(banner.right()-if show_art {290.0}else{26.0}, block_top+132.0));
             let painter = ui.painter_at(text_rect);
-            painter.text(text_rect.min, egui::Align2::LEFT_TOP, "ARTCRAFT MASTER SUITE", egui::FontId::proportional(10.0), Color32::from_rgb(189,168,247));
-            painter.text(text_rect.min+Vec2::new(0.0,22.0), egui::Align2::LEFT_TOP, "A space for every idea.", egui::FontId::proportional(30.0), Color32::WHITE);
-            painter.text(text_rect.min+Vec2::new(0.0,64.0), egui::Align2::LEFT_TOP, "Create, explore, and pick up where you left off.", egui::FontId::proportional(13.0), Color32::from_rgb(203,196,218));
+            painter.text(text_rect.min, egui::Align2::LEFT_TOP,tr("ARTCRAFT MASTER SUITE"), egui::FontId::proportional(10.0), Color32::from_rgb(189,168,247));
+            painter.text(text_rect.min+Vec2::new(0.0,22.0), egui::Align2::LEFT_TOP,tr("A space for every idea."), egui::FontId::proportional(30.0), Color32::WHITE);
+            painter.text(text_rect.min+Vec2::new(0.0,64.0), egui::Align2::LEFT_TOP,tr("Create, explore, and pick up where you left off."), egui::FontId::proportional(13.0), Color32::from_rgb(203,196,218));
             let actions_rect = egui::Rect::from_min_size(text_rect.min+Vec2::new(0.0,96.0), Vec2::new(text_rect.width(),36.0));
             let mut actions = ui.new_child(egui::UiBuilder::new().max_rect(actions_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
             actions.set_clip_rect(actions_rect.expand(2.0).intersect(ui.clip_rect()));
@@ -1608,7 +1582,7 @@ impl Launcher {
                     painter.rect_stroke(tile.expand(5.0), 11.0, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.45)), egui::StrokeKind::Inside);
                     if let Some(texture) = self.states.get(app.id).and_then(|state| state.icon.as_ref()) {
                         painter.image(texture.id(), tile, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
-                    } else { painter.text(position, egui::Align2::CENTER_CENTER, &app.name[..1], egui::FontId::proportional(19.0), app.tint); }
+                    } else { painter.text(position, egui::Align2::CENTER_CENTER,tr(&app.name[..1]), egui::FontId::proportional(19.0), app.tint); }
                 }
             }
             ui.add_space(24.0);
@@ -1625,12 +1599,12 @@ impl Launcher {
             });
             ui.add_space(26.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Quick launch").size(19.0).strong());
+                ui.label(RichText::new(tr("Quick launch")).size(19.0).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.link("View your apps").clicked() { self.page = Page::YourApps; }
+                    if ui.link(tr("View your apps")).clicked() { self.page = Page::YourApps; }
                 });
             });
-            ui.label(RichText::new("Your installed tools, one click away.").size(12.0).color(muted()));
+            ui.label(RichText::new(tr("Your installed tools, one click away.")).size(12.0).color(muted()));
             ui.add_space(10.0);
             if installed.is_empty() {
                 settings_section(ui, "Build your toolkit", "Explore creative and productivity apps, then install the tools you need.", |ui| {
@@ -1645,7 +1619,7 @@ impl Launcher {
                             let ui = &mut cols[index];
                             let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 112.0), egui::Sense::click());
                             let state = self.states.get(app.id).cloned().unwrap_or_default();
-                            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(if state.busy.is_some() { "App operation in progress".to_owned() } else { format!("Open {}", app.name) });
+                            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(if state.busy.is_some() { "App operation in progress".to_owned() } else { format!("Open {}", app.name) }));
                             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, state.busy.is_none(), format!("Open {}", app.name)));
                             let hover = if self.prefs.reduce_motion { if response.hovered() { 1.0 } else { 0.0 } } else { ui.ctx().animate_bool(response.id, response.hovered()) };
                             ui.painter().rect_filled(rect, 12.0, mix_color(panel(), app.tint, 0.19 + hover * 0.12));
@@ -1655,10 +1629,10 @@ impl Launcher {
                                 ui.painter().image(texture.id(), logo, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                             } else {
                                 ui.painter().rect_filled(logo, 8.0, app.tint);
-                                ui.painter().text(logo.center(), egui::Align2::CENTER_CENTER, &app.name[..1], egui::FontId::proportional(20.0), foreground());
+                                ui.painter().text(logo.center(), egui::Align2::CENTER_CENTER,tr(&app.name[..1]), egui::FontId::proportional(20.0), foreground());
                             }
-                            ui.painter().text(egui::pos2(rect.center().x, rect.top() + 72.0), egui::Align2::CENTER_CENTER, app.name, egui::FontId::proportional(14.0), foreground());
-                            ui.painter().text(egui::pos2(rect.center().x, rect.top() + 93.0), egui::Align2::CENTER_CENTER, if state.busy.is_some() { "Working..." } else { "Open app" }, egui::FontId::proportional(10.0), muted());
+                            ui.painter().text(egui::pos2(rect.center().x, rect.top() + 72.0), egui::Align2::CENTER_CENTER,tr(app.name), egui::FontId::proportional(14.0), foreground());
+                            ui.painter().text(egui::pos2(rect.center().x, rect.top() + 93.0), egui::Align2::CENTER_CENTER,tr(if state.busy.is_some() { "Working..." } else { "Open app" }), egui::FontId::proportional(10.0), muted());
                             if response.clicked() && state.busy.is_none() { self.launch(**app, None); }
                         }
                     });
@@ -1667,12 +1641,12 @@ impl Launcher {
             }
             ui.add_space(20.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Recent projects").size(19.0).strong());
+                ui.label(RichText::new(tr("Recent projects")).size(19.0).strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.link("View all projects").clicked() { self.project_filter = "All apps".into(); self.projects_tab = false; self.project_scope = "All projects".into(); self.search.clear(); self.page = Page::Projects; }
+                    if ui.link(tr("View all projects")).clicked() { self.project_filter = "All apps".into(); self.projects_tab = false; self.project_scope = "All projects".into(); self.search.clear(); self.page = Page::Projects; }
                 });
             });
-            ui.label(RichText::new("Continue where you left off.").size(12.0).color(muted()));
+            ui.label(RichText::new(tr("Continue where you left off.")).size(12.0).color(muted()));
             ui.add_space(10.0);
             if self.projects.is_empty() {
                 egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(24).show(ui, |ui| {
@@ -1685,7 +1659,7 @@ impl Launcher {
                         ("Your workspace is ready", "Save a project in one of your watched folders and it will appear here.")
                     };
                     ui.label(RichText::new(title).size(18.0).strong());
-                    ui.label(RichText::new(subtitle).size(13.0).color(muted()));
+                    ui.label(RichText::new(tr(subtitle)).size(13.0).color(muted()));
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
                         if primary_button(ui, "Add project folder").clicked() {
@@ -1708,7 +1682,7 @@ impl Launcher {
         self.heading(ui, "YOUR COLLECTION", "Your apps", "Choose an app to open its workspace, manage updates, and pick up your projects.");
         ui.horizontal(|ui| {
             egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(9).inner_margin(10).show(ui, |ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.your_apps_search).hint_text("Find an installed app...").desired_width(260.0).frame(false));
+                ui.add(egui::TextEdit::singleline(&mut self.your_apps_search).hint_text(tr("Find an installed app...")).desired_width(260.0).frame(false));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if secondary_button(ui, "Manage apps").clicked() { self.page = Page::Apps; }
@@ -1724,12 +1698,12 @@ impl Launcher {
         }
         let query = self.your_apps_search.to_lowercase();
         let apps: Vec<_> = installed.into_iter().filter(|a| format!("{} {}", a.name, a.category).to_lowercase().contains(&query)).collect();
-        if apps.is_empty() { ui.label(RichText::new("No apps match your search.").color(muted())); }
+        if apps.is_empty() { ui.label(RichText::new(tr("No apps match your search.")).color(muted())); }
         egui::ScrollArea::vertical().id_salt("your-apps-library").show(ui, |ui| {
             for (group, label) in [(AppGroup::Creative, "Creative apps"), (AppGroup::Office, "Productivity apps")] {
                 let group_apps: Vec<_> = apps.iter().filter(|a| a.group == group).collect();
                 if group_apps.is_empty() { continue; }
-                ui.label(RichText::new(format!("{}   /   {}", label, group_apps.len())).size(16.0).strong());
+                ui.label(RichText::new(tr(format!("{}   /   {}", label, group_apps.len()))).size(16.0).strong());
                 ui.add_space(10.0);
                 let columns = ((ui.available_width() + 16.0) / 300.0).floor().clamp(1.0, 4.0) as usize;
                 for chunk in group_apps.chunks(columns) {
@@ -1738,7 +1712,7 @@ impl Launcher {
                         for (index, app) in chunk.iter().enumerate() {
                             let ui = &mut uis[index];
                             let (rect, response) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 178.0), egui::Sense::click());
-                            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(format!("View {}", app.name));
+                            let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(format!("View {}", app.name)));
                             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, app.name));
                             let hover = if self.prefs.reduce_motion { if response.hovered() { 1.0 } else { 0.0 } } else { ui.ctx().animate_bool(response.id, response.hovered()) };
                             let painter = ui.painter_at(rect);
@@ -1749,15 +1723,15 @@ impl Launcher {
                                 painter.image(texture.id(), logo, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
                             } else {
                                 painter.rect_filled(logo, 10.0, app.tint);
-                                painter.text(logo.center(), egui::Align2::CENTER_CENTER, &app.name[..1], egui::FontId::proportional(22.0), foreground());
+                                painter.text(logo.center(), egui::Align2::CENTER_CENTER,tr(&app.name[..1]), egui::FontId::proportional(22.0), foreground());
                             }
-                            painter.text(rect.min + Vec2::new(80.0, 31.0), egui::Align2::LEFT_CENTER, app.name, egui::FontId::proportional(18.0), foreground());
-                            painter.text(rect.min + Vec2::new(80.0, 55.0), egui::Align2::LEFT_CENTER, app.category, egui::FontId::proportional(10.0), readable_app_color(app.tint));
+                            painter.text(rect.min + Vec2::new(80.0, 31.0), egui::Align2::LEFT_CENTER,tr(app.name), egui::FontId::proportional(18.0), foreground());
+                            painter.text(rect.min + Vec2::new(80.0, 55.0), egui::Align2::LEFT_CENTER,tr(app.category), egui::FontId::proportional(10.0), readable_app_color(app.tint));
                             let count = self.projects.iter().filter(|p| p.app.id == app.id).count();
                             let state = &self.states[app.id];
                             let status = if state.busy.is_some() { "Working" } else if state.latest.is_some() && state.latest != state.installed { "Update available" } else { "Installed" };
-                            painter.text(rect.min + Vec2::new(20.0, 100.0), egui::Align2::LEFT_CENTER, format!("{}   /   {} project{}", status, count, if count == 1 { "" } else { "s" }), egui::FontId::proportional(12.0), muted());
-                            painter.text(rect.left_bottom() + Vec2::new(20.0, -25.0), egui::Align2::LEFT_CENTER, "View app", egui::FontId::proportional(13.0), foreground());
+                            painter.text(rect.min + Vec2::new(20.0, 100.0), egui::Align2::LEFT_CENTER,tr(format!("{}   /   {} project{}", status, count, if count == 1 { "" } else { "s" })), egui::FontId::proportional(12.0), muted());
+                            painter.text(rect.left_bottom() + Vec2::new(20.0, -25.0), egui::Align2::LEFT_CENTER,tr("View app"), egui::FontId::proportional(13.0), foreground());
                             let c = rect.right_bottom() + Vec2::new(-25.0, -25.0);
                             painter.line_segment([c + Vec2::new(-3.0, -5.0), c + Vec2::new(2.0, 0.0)], egui::Stroke::new(1.5_f32, app.tint));
                             painter.line_segment([c + Vec2::new(2.0, 0.0), c + Vec2::new(-3.0, 5.0)], egui::Stroke::new(1.5_f32, app.tint));
@@ -1782,7 +1756,7 @@ impl Launcher {
             for (group, label) in [(AppGroup::Creative, "Creative Apps"), (AppGroup::Office, "Productivity Apps")] {
                 let selected = self.app_category == group;
                 let color = if selected { Color32::WHITE } else { muted() };
-                if ui.add(egui::Button::new(RichText::new(label).size(13.0).strong().color(color)).fill(if selected { ACCENT } else { panel() }).stroke(egui::Stroke::new(1.0_f32, if selected { ACCENT } else { border() })).corner_radius(9).min_size(Vec2::new(150.0, 38.0))).clicked() {
+                if ui.add(egui::Button::new(RichText::new(tr(label)).size(13.0).strong().color(color)).fill(if selected { ACCENT } else { panel() }).stroke(egui::Stroke::new(1.0_f32, if selected { ACCENT } else { border() })).corner_radius(9).min_size(Vec2::new(150.0, 38.0))).clicked() {
                     self.app_category = group;
                     self.filter = "All apps".into();
                 }
@@ -1793,7 +1767,7 @@ impl Launcher {
             for label in ["All apps", "Installed", "Available updates"] {
                 let selected = self.filter == label;
                 if ui
-                    .selectable_label(selected, RichText::new(label).size(12.0))
+                    .selectable_label(selected, RichText::new(tr(label)).size(12.0))
                     .clicked()
                 {
                     self.filter = label.to_owned();
@@ -1822,8 +1796,8 @@ impl Launcher {
         if filtered.is_empty() {
             egui::Frame::new().fill(panel()).corner_radius(14).inner_margin(24).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                ui.label(RichText::new(if self.filter == "Available updates" { "No updates listed" } else { "No installed apps in this category" }).size(18.0).strong());
-                ui.label(RichText::new("Choose All apps to explore the collection, or check for new releases.").color(muted()));
+                ui.label(RichText::new(tr(if self.filter == "Available updates" { "No updates listed" } else { "No installed apps in this category" })).size(18.0).strong());
+                ui.label(RichText::new(tr("Choose All apps to explore the collection, or check for new releases.")).color(muted()));
             });
         }
         egui::ScrollArea::vertical().show(ui, |ui| {
@@ -1850,9 +1824,9 @@ impl Launcher {
         ui.horizontal(|ui| {
             let heading_width = (ui.available_width() - 140.0).max(240.0);
             ui.allocate_ui_with_layout(Vec2::new(heading_width, 76.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.label(RichText::new("YOUR LIBRARY").size(10.0).strong().color(muted()));
-                ui.label(RichText::new("Projects").size(30.0).strong());
-                ui.label(RichText::new("A home for everything you create.").size(13.0).color(muted()));
+                ui.label(RichText::new(tr("YOUR LIBRARY")).size(10.0).strong().color(muted()));
+                ui.label(RichText::new(tr("Projects")).size(30.0).strong());
+                ui.label(RichText::new(tr("A home for everything you create.")).size(13.0).color(muted()));
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if primary_button(ui, "Add folder").clicked() {
@@ -1862,8 +1836,8 @@ impl Launcher {
         });
         ui.add_space(20.0);
         ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.projects_tab, false, format!("Library  ({})", self.projects.len()));
-            ui.selectable_value(&mut self.projects_tab, true, format!("Folders  ({})", self.prefs.roots.len()));
+            ui.selectable_value(&mut self.projects_tab, false,tr(format!("Library  ({})", self.projects.len())));
+            ui.selectable_value(&mut self.projects_tab, true,tr(format!("Folders  ({})", self.prefs.roots.len())));
         });
         ui.add_space(16.0);
         if self.projects_tab { self.project_folders_page(ui); return; }
@@ -1871,7 +1845,7 @@ impl Launcher {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 let width = (ui.available_width() - 150.0).max(170.0);
-                ui.add_sized([width, 36.0], egui::TextEdit::singleline(&mut self.search).hint_text("Search names, formats, or folders...").margin(Vec2::new(12.0, 9.0)));
+                ui.add_sized([width, 36.0], egui::TextEdit::singleline(&mut self.search).hint_text(tr("Search names, formats, or folders...")).margin(Vec2::new(12.0, 9.0)));
                 self.project_view_controls(ui);
             });
             ui.add_space(10.0);
@@ -1888,16 +1862,16 @@ impl Launcher {
                 filters.push(cell);
                 x += width + 10.0;
             }
-            egui::ComboBox::from_id_salt("library-app").width(142.0).selected_text(&self.project_filter).show_ui(&mut filters[0], |ui| {
-                ui.selectable_value(&mut self.project_filter, "All apps".into(), "All apps");
-                for app in APPS { ui.selectable_value(&mut self.project_filter, app.name.into(), app.name); }
+            egui::ComboBox::from_id_salt("library-app").width(142.0).selected_text(tr(&self.project_filter)).show_ui(&mut filters[0], |ui| {
+                ui.selectable_value(&mut self.project_filter, "All apps".into(),tr("All apps"));
+                for app in APPS { ui.selectable_value(&mut self.project_filter, app.name.into(),tr(app.name)); }
             });
-            egui::ComboBox::from_id_salt("library-scope").width(128.0).selected_text(&self.project_scope).show_ui(&mut filters[1], |ui| {
-                for label in ["All projects", "Favorites", "Last 7 days"] { ui.selectable_value(&mut self.project_scope, label.into(), label); }
+            egui::ComboBox::from_id_salt("library-scope").width(128.0).selected_text(tr(&self.project_scope)).show_ui(&mut filters[1], |ui| {
+                for label in ["All projects", "Favorites", "Last 7 days"] { ui.selectable_value(&mut self.project_scope, label.into(),tr(label)); }
             });
             let old_sort = self.prefs.project_sort.clone();
-            egui::ComboBox::from_id_salt("library-sort").width(166.0).selected_text(&self.prefs.project_sort).show_ui(&mut filters[2], |ui| {
-                for label in ["Recently modified", "Name A-Z", "Largest first", "By app"] { ui.selectable_value(&mut self.prefs.project_sort, label.into(), label); }
+            egui::ComboBox::from_id_salt("library-sort").width(166.0).selected_text(tr(&self.prefs.project_sort)).show_ui(&mut filters[2], |ui| {
+                for label in ["Recently modified", "Name A-Z", "Largest first", "By app"] { ui.selectable_value(&mut self.prefs.project_sort, label.into(),tr(label)); }
             });
             if old_sort != self.prefs.project_sort { save_preferences(&self.prefs); }
             if icon_button_sized(&mut filters[3], ButtonIcon::Refresh, "Refresh library", muted(), 36.0).clicked() { self.scan_projects(); }
@@ -1921,10 +1895,10 @@ impl Launcher {
             _ => list.sort_by_key(|p| std::cmp::Reverse(p.modified)),
         }
         ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("{} projects  /  {}", list.len(), format_file_size(list.iter().map(|p| p.size_bytes).sum()))).size(12.0).color(muted()));
-            if self.prefs.scanning { ui.label(RichText::new("Refreshing...").size(12.0).color(ACCENT)); }
+            ui.label(RichText::new(tr(format!("{} projects  /  {}", list.len(), format_file_size(list.iter().map(|p| p.size_bytes).sum())))).size(12.0).color(muted()));
+            if self.prefs.scanning { ui.label(RichText::new(tr("Refreshing...")).size(12.0).color(ACCENT)); }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if (!query.is_empty() || self.project_filter != "All apps" || self.project_scope != "All projects") && ui.link("Clear filters").clicked() {
+                if (!query.is_empty() || self.project_filter != "All apps" || self.project_scope != "All projects") && ui.link(tr("Clear filters")).clicked() {
                     self.search.clear(); self.project_filter = "All apps".into(); self.project_scope = "All projects".into();
                 }
             });
@@ -1939,8 +1913,8 @@ impl Launcher {
     }
 
     fn project_folders_page(&mut self, ui: &mut egui::Ui) {
-        ui.label(RichText::new("Connected folders").size(19.0).strong());
-        ui.label(RichText::new("Files stay where they are. Removing a folder here only stops watching it.").size(12.0).color(muted()));
+        ui.label(RichText::new(tr("Connected folders")).size(19.0).strong());
+        ui.label(RichText::new(tr("Files stay where they are. Removing a folder here only stops watching it.")).size(12.0).color(muted()));
         ui.add_space(12.0);
         let roots = self.prefs.roots.clone();
         if roots.is_empty() { self.empty_projects(ui); return; }
@@ -1949,14 +1923,14 @@ impl Launcher {
             for (index, root) in roots.iter().enumerate() {
                 egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(12).inner_margin(18).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.add(egui::Label::new(RichText::new(root.file_name().unwrap_or_default().to_string_lossy()).size(16.0).strong()).truncate());
+                    ui.add(egui::Label::new(RichText::new(tr(root.file_name().unwrap_or_default().to_string_lossy())).size(16.0).strong()).truncate());
                     ui.add(egui::Label::new(RichText::new(root.display().to_string()).size(12.0).color(muted())).truncate()).on_hover_text(root.display().to_string());
                     ui.add_space(12.0);
                     ui.allocate_ui_with_layout(Vec2::new(ui.available_width(), 36.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 12.0;
                         let count = self.projects.iter().filter(|p| p.path.starts_with(root)).count();
-                        ui.label(RichText::new(format!("{count} projects")).size(12.0).color(muted()));
-                        if self.prefs.default_project_root.as_ref() == Some(root) { ui.label(RichText::new("Default folder").size(12.0).color(ACCENT)); }
+                        ui.label(RichText::new(tr(format!("{count} projects"))).size(12.0).color(muted()));
+                        if self.prefs.default_project_root.as_ref() == Some(root) { ui.label(RichText::new(tr("Default folder")).size(12.0).color(ACCENT)); }
                         else if secondary_button(ui, "Make default").clicked() { self.prefs.default_project_root = Some(root.clone()); save_preferences(&self.prefs); }
                         if secondary_button(ui, "Open folder").clicked() { reveal_project_path(root, false); }
                         if icon_button(ui, ButtonIcon::Delete, "Stop watching this folder", theme_rgb(213, 103, 111)).clicked() { remove = Some(index); }
@@ -1977,8 +1951,8 @@ impl Launcher {
     fn project_context_menu(&mut self, response: &egui::Response, project: &Project) {
         response.context_menu(|ui| {
             if ui.button(if self.prefs.favorite_projects.contains(&project.path) { "Remove from favorites" } else { "Add to favorites" }).clicked() { self.toggle_project_favorite(&project.path); ui.close_menu(); }
-            if ui.button("Show in File Explorer").clicked() { reveal_project_path(&project.path, true); ui.close_menu(); }
-            if ui.button("Copy file path").clicked() { ui.ctx().copy_text(project.path.display().to_string()); ui.close_menu(); }
+            if ui.button(tr("Show in File Explorer")).clicked() { reveal_project_path(&project.path, true); ui.close_menu(); }
+            if ui.button(tr("Copy file path")).clicked() { ui.ctx().copy_text(project.path.display().to_string()); ui.close_menu(); }
         });
     }
 
@@ -1992,8 +1966,8 @@ impl Launcher {
             if secondary_button(ui, if self.detail_parent == Page::YourApps { "Your apps" } else { "App Manager" }).clicked() {
                 self.page = self.detail_parent;
             }
-            ui.label(RichText::new("/").color(muted()));
-            ui.label(RichText::new(app.name).strong().color(foreground()));
+            ui.label(RichText::new(tr("/")).color(muted()));
+            ui.label(RichText::new(tr(app.name)).strong().color(foreground()));
         });
         ui.add_space(12.0);
         egui::Frame::new()
@@ -2006,9 +1980,9 @@ impl Launcher {
                     self.app_logo(ui, &app, 72.0);
                     ui.add_space(8.0);
                     ui.vertical(|ui| {
-                        ui.label(RichText::new(app.category).size(11.0).strong().color(readable_app_color(app.tint)));
-                        ui.label(RichText::new(app.name).size(27.0).strong().color(foreground()));
-                        ui.label(RichText::new(app.blurb).size(13.0).color(muted()));
+                        ui.label(RichText::new(tr(app.category)).size(11.0).strong().color(readable_app_color(app.tint)));
+                        ui.label(RichText::new(tr(app.name)).size(27.0).strong().color(foreground()));
+                        ui.label(RichText::new(tr(app.blurb)).size(13.0).color(muted()));
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let status = if state.busy.is_some() {
@@ -2020,7 +1994,7 @@ impl Launcher {
                         } else {
                             "Not installed"
                         };
-                        ui.label(RichText::new(status).size(12.0).color(if state.installed.is_some() {
+                        ui.label(RichText::new(tr(status)).size(12.0).color(if state.installed.is_some() {
                             theme_rgb(108, 211, 153)
                         } else {
                             muted()
@@ -2031,23 +2005,23 @@ impl Launcher {
                 ui.horizontal(|ui| {
                     let installed = state.installed.as_deref().map(|v| format!("Installed version: {v}"))
                         .unwrap_or_else(|| "Not installed on this device".into());
-                    let latest = if !app.has_release && state.installed.is_none() { "No official Windows release yet".to_owned() } else {
+                    let latest = if !app.has_release && state.installed.is_none() { "No compatible release yet".to_owned() } else {
                         state.latest.as_deref().map(|v| format!("Latest release: {v}"))
                             .unwrap_or_else(|| "Latest release is checked when you install".into())
                     };
-                    ui.label(RichText::new(installed).size(12.0).color(muted()));
+                    ui.label(RichText::new(tr(installed)).size(12.0).color(muted()));
                     ui.separator();
-                    ui.label(RichText::new(latest).size(12.0).color(muted()));
+                    ui.label(RichText::new(tr(latest)).size(12.0).color(muted()));
                 });
                 if let Some(error) = &state.error {
                     ui.add_space(6.0);
-                    ui.label(RichText::new(error).size(12.0).color(theme_rgb(255, 156, 135)));
+                    ui.label(RichText::new(tr(error)).size(12.0).color(theme_rgb(255, 156, 135)));
                 }
                 if let Some(progress) = &state.busy {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         ui.spinner();
-                        ui.label(RichText::new(progress).size(12.0).color(muted()));
+                        ui.label(RichText::new(tr(progress)).size(12.0).color(muted()));
                     });
                 }
                 ui.add_space(13.0);
@@ -2070,7 +2044,7 @@ impl Launcher {
                                 self.install(app);
                             }
                         } else {
-                            ui.add_enabled(false, egui::Button::new("No Windows release yet"));
+                            ui.add_enabled(false, egui::Button::new(tr("No compatible release yet")));
                         }
                         if icon_button(ui, ButtonIcon::Github, "Open source repository on GitHub", muted()).clicked() {
                             open_url(&format!("{REPO}/{}", release_slug(app.id)));
@@ -2087,16 +2061,16 @@ impl Launcher {
 
         ui.add_space(20.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Recent projects").size(17.0).strong().color(foreground()));
+            ui.label(RichText::new(tr("Recent projects")).size(17.0).strong().color(foreground()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.link("View all projects").clicked() {
+                if ui.link(tr("View all projects")).clicked() {
                     self.project_filter = app.name.to_owned();
                     self.page = Page::Projects;
                 }
             });
         });
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Open a recent file directly in this app.").size(12.0).color(muted()));
+            ui.label(RichText::new(tr("Open a recent file directly in this app.")).size(12.0).color(muted()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.allocate_ui_with_layout(Vec2::new(116.0, 36.0), egui::Layout::left_to_right(egui::Align::Center), |ui| self.project_view_controls(ui));
             });
@@ -2105,8 +2079,8 @@ impl Launcher {
         let recent: Vec<Project> = self.projects.iter().filter(|p| p.app.id == app.id).take(5).cloned().collect();
         if recent.is_empty() {
             egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(12).inner_margin(18).show(ui, |ui| {
-                ui.label(RichText::new(format!("No {} projects found yet.", app.name)).color(muted()));
-                if ui.button("Choose project folders").clicked() {
+                ui.label(RichText::new(tr(format!("No {} projects found yet.", app.name))).color(muted()));
+                if ui.button(tr("Choose project folders")).clicked() {
                     self.page = Page::Projects;
                 }
             });
@@ -2114,9 +2088,9 @@ impl Launcher {
             self.project_gallery(ui, recent);
         }
         ui.add_space(18.0);
-        ui.label(RichText::new("Supported file types").size(15.0).strong().color(foreground()));
+        ui.label(RichText::new(tr("Supported file types")).size(15.0).strong().color(foreground()));
         let formats = app.filetypes.iter().map(|extension| format!(".{extension}")).collect::<Vec<_>>().join("   ");
-        ui.label(RichText::new(formats).size(12.0).color(muted()));
+        ui.label(RichText::new(tr(formats)).size(12.0).color(muted()));
     }
 
     fn empty_projects(&mut self, ui: &mut egui::Ui) {
@@ -2124,8 +2098,8 @@ impl Launcher {
             ui.vertical_centered(|ui| {
                 let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
                 paint_navigation_icon(&ui.painter(), icon_rect, Page::Projects, ACCENT);
-                ui.label(RichText::new("Your projects live here.").size(17.0).strong());
-                ui.label(RichText::new("Choose a folder to create an app folder for each tool. Projects saved there are found automatically.").size(12.0).color(muted()));
+                ui.label(RichText::new(tr("Your projects live here.")).size(17.0).strong());
+                ui.label(RichText::new(tr("Choose a folder to create an app folder for each tool. Projects saved there are found automatically.")).size(12.0).color(muted()));
                 ui.add_space(7.0);
                 if primary_button(ui, "Add a project folder").clicked() { if let Some(path) = rfd::FileDialog::new().pick_folder() { self.add_project_folder(path); } }
             });
@@ -2157,7 +2131,7 @@ impl Launcher {
         let thumb_rect = egui::Rect::from_min_size(rect.min + Vec2::new(12.0, 14.0), Vec2::new(56.0, 48.0));
         let mut thumb_ui = ui.new_child(egui::UiBuilder::new().max_rect(thumb_rect));
         self.project_thumbnail_at(&mut thumb_ui, project, thumb_rect.size());
-        let actions_rect = egui::Rect::from_min_max(egui::pos2(rect.right() - 304.0, rect.center().y - 18.0), egui::pos2(rect.right() - 12.0, rect.center().y + 18.0));
+        let actions_rect = egui::Rect::from_min_max(egui::pos2(rect.right() - 338.0, rect.center().y - 18.0), egui::pos2(rect.right() - 12.0, rect.center().y + 18.0));
         let details_rect = egui::Rect::from_min_max(egui::pos2(rect.left() + 80.0, rect.center().y - 18.0), egui::pos2(actions_rect.left() - 12.0, rect.center().y + 18.0));
         let mut details = ui.new_child(egui::UiBuilder::new().max_rect(details_rect).layout(egui::Layout::top_down(egui::Align::Min)));
         details.set_clip_rect(details_rect.intersect(ui.clip_rect()));
@@ -2165,15 +2139,16 @@ impl Launcher {
         details.add(egui::Label::new(RichText::new(project.path.file_stem().unwrap_or_default().to_string_lossy()).size(14.0).strong()).truncate()).on_hover_text(project.path.display().to_string());
         let extension = project.path.extension().and_then(|e| e.to_str()).unwrap_or("file").to_uppercase();
         let modified = project.modified.map(|date| date.format("%b %e, %Y").to_string()).unwrap_or_else(|| "Unknown date".into());
-        details.add(egui::Label::new(RichText::new(format!("{}  /  {}  /  {}  /  {}", extension, format_file_size(project.size_bytes), modified, project.app.name)).size(11.0).color(muted())).truncate()).on_hover_text(format!("Modified {}\n{}", modified, project.path.display()));
+        details.add(egui::Label::new(RichText::new(tr(format!("{}  /  {}  /  {}  /  {}", extension, format_file_size(project.size_bytes), modified, project.app.name))).size(11.0).color(muted())).truncate()).on_hover_text(format!("Modified {}\n{}", modified, project.path.display()));
         let mut actions = ui.new_child(egui::UiBuilder::new().max_rect(actions_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         actions.spacing_mut().item_spacing.x = 5.0;
         if icon_button_sized(&mut actions, ButtonIcon::Delete, "Delete project", theme_rgb(213, 103, 111), 28.0).clicked() { self.show_project_delete = Some(project.clone()); }
         if icon_button_sized(&mut actions, ButtonIcon::Rename, "Rename project", muted(), 28.0).clicked() {
-            self.show_project_rename = Some(ProjectRename { path: project.path.clone(), name: project.path.file_stem().unwrap_or_default().to_string_lossy().into_owned() });
+            self.show_project_rename = Some(ProjectRename { focused: false, path: project.path.clone(), name: project.path.file_stem().unwrap_or_default().to_string_lossy().into_owned() });
         }
         if icon_button_sized(&mut actions, ButtonIcon::Folder, "Show in File Explorer", muted(), 28.0).clicked() { reveal_project_path(&project.path, true); }
         let favorite = self.prefs.favorite_projects.contains(&project.path);
+        self.project_cloud_badge(&mut actions, project);
         if icon_button_sized(&mut actions, ButtonIcon::Favorite, if favorite { "Remove from favorites" } else { "Add to favorites" }, if favorite { ACCENT } else { muted() }, 28.0).clicked() { self.toggle_project_favorite(&project.path); }
         if secondary_button(&mut actions, &format!("Open in {}", project.app.name)).clicked() { self.launch(*project.app, Some(&project.path)); }
     }
@@ -2223,9 +2198,10 @@ impl Launcher {
                 self.project_thumbnail_at(ui, project, Vec2::new(available, height));
                 ui.add_space(7.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new(project.app.name).size(10.0).strong().color(muted()));
+                    ui.label(RichText::new(tr(project.app.name)).size(10.0).strong().color(muted()));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let favorite = self.prefs.favorite_projects.contains(&project.path);
+                        self.project_cloud_badge(ui, project);
                         if icon_button_sized(ui, ButtonIcon::Favorite, if favorite { "Remove from favorites" } else { "Add to favorites" }, if favorite { ACCENT } else { muted() }, 24.0).clicked() { self.toggle_project_favorite(&project.path); }
                     });
                 });
@@ -2233,9 +2209,9 @@ impl Launcher {
                 ui.add(egui::Label::new(RichText::new(title).size(15.0).strong().color(foreground())).truncate()).on_hover_text(project.path.display().to_string());
                 let ext = project.path.extension().and_then(|e|e.to_str()).unwrap_or("FILE").to_uppercase();
                 let modified = project.modified.map(|d|d.format("%b %e, %Y").to_string()).unwrap_or_else(||"Unknown date".into());
-                ui.label(RichText::new(format!("{ext}   /   {}   /   {modified}", format_file_size(project.size_bytes))).size(10.0).color(muted()));
+                ui.label(RichText::new(tr(format!("{ext}   /   {}   /   {modified}", format_file_size(project.size_bytes)))).size(10.0).color(muted()));
                 let folder = project.path.parent().unwrap_or(Path::new("")).display().to_string();
-                ui.add(egui::Label::new(RichText::new(folder).size(9.0).color(muted())).truncate()).on_hover_text(project.path.display().to_string());
+                ui.add(egui::Label::new(RichText::new(tr(folder)).size(9.0).color(muted())).truncate()).on_hover_text(project.path.display().to_string());
                 ui.add_space(6.0);
                 let row_width = ui.available_width();
                 ui.allocate_ui_with_layout(Vec2::new(row_width, 36.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -2245,7 +2221,7 @@ impl Launcher {
                         if icon_button(ui, ButtonIcon::Folder, "Show in File Explorer", muted()).clicked() { reveal_project_path(&project.path, true); }
                         if icon_button(ui, ButtonIcon::Delete, "Delete project", theme_rgb(213,103,111)).clicked() { self.show_project_delete = Some(project.clone()); }
                         if icon_button(ui, ButtonIcon::Rename, "Rename project", muted()).clicked() {
-                            self.show_project_rename = Some(ProjectRename { path: project.path.clone(), name: project.path.file_stem().unwrap_or_default().to_string_lossy().into_owned() });
+                            self.show_project_rename = Some(ProjectRename { focused: false, path: project.path.clone(), name: project.path.file_stem().unwrap_or_default().to_string_lossy().into_owned() });
                         }
                     });
                 });
@@ -2260,10 +2236,10 @@ impl Launcher {
             "Make yourself at home.",
             "Keep the launcher arranged to fit the way you work.",
         );
-        ui.horizontal(|ui| {
-            for (index, label) in ["Appearance", "Updates", "Projects", "Windows", "About"].iter().enumerate() {
+        ui.horizontal_wrapped(|ui| {
+            for (index, label) in ["Appearance", "Updates", "Projects", "System", "About"].iter().enumerate() {
                 let selected = self.settings_tab == index;
-                if ui.add(egui::Button::new(RichText::new(*label).color(if selected { Color32::WHITE } else { foreground() })).fill(if selected { ACCENT } else { panel() }).min_size(Vec2::new(105.0, 38.0)).corner_radius(9)).clicked() { self.settings_tab = index; }
+                if ui.add(egui::Button::new(RichText::new(tr(*label)).color(if selected { Color32::WHITE } else { foreground() })).fill(if selected { ACCENT } else { panel() }).min_size(Vec2::new(105.0, 38.0)).corner_radius(9)).clicked() { self.settings_tab = index; }
             }
         });
         ui.add_space(18.0);
@@ -2272,27 +2248,38 @@ impl Launcher {
         if self.settings_tab == 0 {
         settings_section(ui, "Appearance & navigation", "Personalize your workspace without changing your projects.", |ui| {
             ui.horizontal(|ui| {
-                ui.label("Theme");
-                ui.selectable_value(&mut self.prefs.light_mode, false, "Dark");
-                ui.selectable_value(&mut self.prefs.light_mode, true, "Light");
+                ui.label(tr("Language"));
+                egui::ComboBox::from_id_salt("display-language").width(230.0)
+                    .selected_text(tr(localization::name(&self.prefs.language))).show_ui(ui, |ui| {
+                        for (code, name) in localization::LANGUAGES {
+                            ui.selectable_value(&mut self.prefs.language, code.to_owned(), name);
+                        }
+                    });
+            });
+            ui.add_space(12.0);
+
+            ui.horizontal(|ui| {
+                ui.label(tr("Theme"));
+                ui.selectable_value(&mut self.prefs.light_mode, false,tr("Dark"));
+                ui.selectable_value(&mut self.prefs.light_mode, true,tr("Light"));
             });
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                ui.label("Sidebar design");
-                ui.selectable_value(&mut self.prefs.classic_sidebar, false, "Modern");
-                ui.selectable_value(&mut self.prefs.classic_sidebar, true, "Classic");
+                ui.label(tr("Sidebar design"));
+                ui.selectable_value(&mut self.prefs.classic_sidebar, false,tr("Modern"));
+                ui.selectable_value(&mut self.prefs.classic_sidebar, true,tr("Classic"));
             });
-            ui.label(RichText::new("Classic restores the previous sidebar. Switch designs at any time.").size(12.0).color(muted()));
+            ui.label(RichText::new(tr("Classic restores the previous sidebar. Switch designs at any time.")).size(12.0).color(muted()));
             setting_toggle(ui, "Classic app screens", "Restore the previous app manager, collection and workspace layouts.", &mut self.prefs.classic_app_screens);
             ui.add_space(8.0);
             setting_toggle(ui, "Compact sidebar", "Keep navigation small, with app icons and tooltips.", &mut self.prefs.compact_sidebar);
             setting_toggle(ui, "Reduce motion", "Use static splash artwork and instant page transitions.", &mut self.prefs.reduce_motion);
             ui.horizontal(|ui| {
-                ui.label("Project layout");
+                ui.label(tr("Project layout"));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.selectable_value(&mut self.prefs.project_view, ProjectView::Waterfall, "Waterfall");
-                    ui.selectable_value(&mut self.prefs.project_view, ProjectView::Grid, "Grid");
-                    ui.selectable_value(&mut self.prefs.project_view, ProjectView::List, "List");
+                    ui.selectable_value(&mut self.prefs.project_view, ProjectView::Waterfall,tr("Waterfall"));
+                    ui.selectable_value(&mut self.prefs.project_view, ProjectView::Grid,tr("Grid"));
+                    ui.selectable_value(&mut self.prefs.project_view, ProjectView::List,tr("List"));
                 });
             });
         });
@@ -2300,8 +2287,8 @@ impl Launcher {
         if self.settings_tab == 1 {
         settings_section(ui, "Master Suite updates", "Keep this manager up to date from its official GitHub releases.", |ui| {
             setting_toggle(ui, "Update Master Suite automatically", "Check at startup and every 4 hours. Download verified updates and restart when idle.", &mut self.prefs.automatic_suite_updates);
-            ui.label(RichText::new(format!("Installed version: {VERSION}")).size(12.0).color(muted()));
-            ui.label(RichText::new(&self.suite_update_status).size(12.0).color(muted()));
+            ui.label(RichText::new(tr(format!("Installed version: {VERSION}"))).size(12.0).color(muted()));
+            ui.label(RichText::new(tr(&self.suite_update_status)).size(12.0).color(muted()));
             ui.horizontal(|ui| {
                 if icon_button(ui, ButtonIcon::UpdateArrow, "Check for Master Suite updates", ACCENT).clicked() { self.check_suite_update(true); }
                 ui.hyperlink_to("Release history", "https://github.com/ZifuM/Craft-apps-launcher-installer/releases");
@@ -2318,9 +2305,9 @@ impl Launcher {
             setting_toggle(ui, "Automatic update checks", "Look for new official releases in the background.", &mut self.prefs.automatic_updates);
             ui.add_enabled_ui(self.prefs.automatic_updates, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Check every");
-                    egui::ComboBox::from_id_salt("update-frequency").selected_text(format!("{} hours", self.prefs.update_interval_hours)).show_ui(ui, |ui| {
-                        for hours in [1, 2, 4, 8, 12, 24] { ui.selectable_value(&mut self.prefs.update_interval_hours, hours, format!("{hours} hours")); }
+                    ui.label(tr("Check every"));
+                    egui::ComboBox::from_id_salt("update-frequency").selected_text(tr(format!("{} hours", self.prefs.update_interval_hours))).show_ui(ui, |ui| {
+                        for hours in [1, 2, 4, 8, 12, 24] { ui.selectable_value(&mut self.prefs.update_interval_hours, hours,tr(format!("{hours} hours"))); }
                     });
                 });
             });
@@ -2332,9 +2319,9 @@ impl Launcher {
             setting_toggle(ui, "Refresh projects automatically", "Find new, renamed and removed files while the launcher is open.", &mut self.prefs.automatic_project_scan);
             ui.add_enabled_ui(self.prefs.automatic_project_scan, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label("Refresh every");
-                    egui::ComboBox::from_id_salt("scan-frequency").selected_text(format!("{} minutes", self.prefs.project_scan_minutes)).show_ui(ui, |ui| {
-                        for minutes in [1, 3, 5, 10, 15, 30] { ui.selectable_value(&mut self.prefs.project_scan_minutes, minutes, format!("{minutes} minutes")); }
+                    ui.label(tr("Refresh every"));
+                    egui::ComboBox::from_id_salt("scan-frequency").selected_text(tr(format!("{} minutes", self.prefs.project_scan_minutes))).show_ui(ui, |ui| {
+                        for minutes in [1, 3, 5, 10, 15, 30] { ui.selectable_value(&mut self.prefs.project_scan_minutes, minutes,tr(format!("{minutes} minutes"))); }
                     });
                 });
             });
@@ -2343,8 +2330,8 @@ impl Launcher {
         if self.settings_tab == 2 {
         egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(20).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new("Project folders").size(16.0).strong());
-            ui.label(RichText::new("Each folder gets a subfolder for every app. The default folder is also used as the app's launch and save location where the app supports it; an app's own saved location can override it.").size(12.0).color(muted()));
+            ui.label(RichText::new(tr("Project folders")).size(16.0).strong());
+            ui.label(RichText::new(tr("Each folder gets a subfolder for every app. The default folder is also used as the app's launch and save location where the app supports it; an app's own saved location can override it.")).size(12.0).color(muted()));
             ui.add_space(10.0);
             let mut remove = None;
             let roots = self.prefs.roots.clone();
@@ -2360,8 +2347,8 @@ impl Launcher {
                 let mut actions = ui.new_child(egui::UiBuilder::new().max_rect(actions_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
                 actions.spacing_mut().item_spacing.x = 8.0;
                 if default_root.as_ref() == Some(root) {
-                    actions.add_sized([132.0, 32.0], egui::Label::new(RichText::new("Default save folder").size(11.0).color(ACCENT)));
-                } else if actions.add_sized([132.0, 32.0], egui::Button::new("Use as default")).clicked() {
+                    actions.add_sized([132.0, 32.0], egui::Label::new(RichText::new(tr("Default save folder")).size(11.0).color(ACCENT)));
+                } else if actions.add_sized([132.0, 32.0], egui::Button::new(tr("Use as default"))).clicked() {
                     self.prefs.default_project_root = Some(root.clone());
                     save_preferences(&self.prefs);
                     self.toast = Some(format!("{} is now the default app project folder.", root.display()));
@@ -2374,18 +2361,38 @@ impl Launcher {
         ui.add_space(12.0);
         }
         if self.settings_tab == 3 {
-            settings_section(ui, "Windows & system tray", "Choose how Master Suite runs in the background.", |ui| {
+            settings_section(ui, "Startup & system tray", "Choose how Master Suite runs in the background.", |ui| {
                 setting_toggle(ui, "Minimize to system tray", "Keep the app running in the tray when minimized. Close still quits.", &mut self.prefs.minimize_to_tray);
-                setting_toggle(ui, "Start with Windows in the tray", "Start quietly when you sign in. Open the app from its tray icon.", &mut self.prefs.start_with_windows);
+                setting_toggle(ui, "Start at login in the tray", "Start quietly when you sign in. Open the app from its tray icon.", &mut self.prefs.start_with_windows);
             });
         }
         if self.settings_tab == 4 {
         egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(20).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new("About ArtCraft Master Suite").size(16.0).strong());
-            ui.label(RichText::new(format!("Version {VERSION}  |  Native Windows desktop app")).size(12.0).color(muted()));
-            ui.label(RichText::new("Open-source creative apps by Storytold. This independent launcher is not affiliated with Adobe.").size(12.0).color(muted()));
-            ui.horizontal(|ui| { if ui.link("ArtCraft apps").clicked() { open_url("https://getartcraft.com/apps"); } if ui.link("Source repositories").clicked() { open_url(REPO); } });
+            ui.label(RichText::new(tr("About ArtCraft Master Suite")).size(16.0).strong());
+            ui.label(RichText::new(tr(format!("Version {VERSION} · Beta"))).size(12.0).color(muted()));
+            ui.label(RichText::new(tr("Open-source creative apps by Storytold. This independent launcher is not affiliated with Adobe.")).size(12.0).color(muted()));
+            ui.horizontal(|ui| { if ui.link(tr("ArtCraft apps")).clicked() { open_url("https://getartcraft.com/apps"); } if ui.link(tr("Source repositories")).clicked() { open_url(REPO); } });
+        });
+        ui.add_space(16.0);
+        settings_section(ui, "App credits", "Created by Storytold and the app contributors. Explore each project's source on GitHub.", |ui| {
+            for (index, app) in APPS.iter().enumerate() {
+                ui.push_id(("app-credit", app.id), |ui| {
+                    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 60.0), egui::Sense::hover());
+                    ui.painter().rect_filled(row, 10.0, card());
+                    let logo = egui::Rect::from_min_size(row.min + Vec2::new(12.0, 14.0), Vec2::splat(32.0));
+                    let mut logo_ui = ui.new_child(egui::UiBuilder::new().max_rect(logo));
+                    self.app_logo(&mut logo_ui, app, 32.0);
+                    let text_width = (row.width() - 186.0).max(20.0);
+                    app_screens::text_at(ui, egui::Rect::from_min_size(row.min + Vec2::new(58.0, 10.0), Vec2::new(text_width, 23.0)), app.name, 14.0, foreground());
+                    let repository = format!("storytold/{}", release_slug(app.id));
+                    app_screens::text_at(ui, egui::Rect::from_min_size(row.min + Vec2::new(58.0, 34.0), Vec2::new(text_width, 18.0)), &repository, 11.0, muted()).on_hover_text(&repository);
+                    let button = egui::Rect::from_min_size(egui::pos2(row.right() - 112.0, row.top() + 13.0), Vec2::new(100.0, 34.0));
+                    let url = format!("{REPO}/{}", release_slug(app.id));
+                    if app_screens::action(ui, button, "credit-github", "GitHub", panel(), readable_app_color(app.tint), true).on_hover_text(&url).clicked() { open_url(&url); }
+                });
+                if index + 1 < APPS.len() { ui.add_space(4.0); }
+            }
         });
         }
         if before != serde_json::to_string(&self.prefs).unwrap_or_default() {
@@ -2397,10 +2404,14 @@ impl Launcher {
                     self.toast = Some(error);
                 }
             }
+            #[cfg(target_os="linux")]
+            if previous_startup!=self.prefs.start_with_windows{if let Err(error)=linux_tray::set_startup(self.prefs.start_with_windows){self.prefs.start_with_windows=previous_startup;self.toast=Some(error);}}
             self.sidebar_collapsed = self.prefs.compact_sidebar;
             if !self.prefs.update_notifications && self.persistent_toast.is_some() {
                 self.toast = None; self.persistent_toast = None;
             }
+            localization::select(&self.prefs.language);
+            ui.ctx().request_repaint();
             save_preferences(&self.prefs);
         }
     }
@@ -2412,6 +2423,7 @@ impl eframe::App for Launcher {
             apply_theme(ctx, self.prefs.light_mode);
             self.applied_light_mode = Some(self.prefs.light_mode);
         }
+        update_scrollbar_visibility(ctx);
         #[cfg(target_os = "windows")]
         {
             let needs_tray = self.prefs.minimize_to_tray || self.prefs.start_with_windows;
@@ -2434,6 +2446,20 @@ impl eframe::App for Launcher {
             }
         }
 
+        #[cfg(target_os="linux")]
+        {
+            let needed=self.prefs.minimize_to_tray||self.prefs.start_with_windows;
+            if self.linux_tray.as_ref().is_some_and(|t|!t.available()){self.linux_tray=None;self.tray_failed=true;ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));}
+            if needed&&self.linux_tray.is_none()&&!self.tray_failed{match linux_tray::Tray::new(self.events_tx.clone(),ctx.clone()){Ok(tray)=>self.linux_tray=Some(tray),Err(error)=>{self.tray_failed=true;self.toast=Some(error);}}}
+            if !needed{if self.linux_tray.take().is_some(){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));}}
+            if self.silent_start{
+                self.silent_start=false;self.startup_splash_finished=true;self.startup_splash_initialized=true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1240.0,800.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(920.0,640.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.linux_tray.is_none()));
+            }
+            if self.prefs.minimize_to_tray&&self.linux_tray.is_some()&&ctx.input(|i|i.viewport().minimized==Some(true)){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));}
+        }
         if !self.window_rounding_applied {
             #[cfg(target_os = "windows")]
             apply_window_rounding(frame);
@@ -2457,7 +2483,7 @@ impl eframe::App for Launcher {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         if self.prefs.automatic_suite_updates && self.startup_splash_finished { self.check_suite_update(false); }
-        let suite_can_restart = self.startup_splash_finished && self.pending_launch.is_none()
+        let suite_can_restart = self.prefs.onboarding_complete && self.startup_splash_finished && self.pending_launch.is_none()
             && self.show_project_rename.is_none() && self.show_project_delete.is_none() && self.show_remove.is_none()
             && !self.prefs.scanning && self.states.values().all(|state| state.busy.is_none());
         if let Some((_, ready_at)) = self.suite_update_ready.as_mut() {
@@ -2473,6 +2499,19 @@ impl eframe::App for Launcher {
             }
         }
         if self.prefs.automatic_updates { self.check_releases(); }
+        // Watch known files independently of the slower folder-discovery interval.
+        if !self.preview_check_busy && !self.prefs.scanning && self.last_preview_check.elapsed() >= Duration::from_secs(2) {
+            self.last_preview_check = Instant::now();
+            self.preview_check_busy = true;
+            let files: Vec<_> = self.projects.iter().map(|p|(p.path.clone(),p.revision)).collect();
+            let retry = self.projects.iter().any(|p|p.preview.is_none()) && self.last_project_scan.elapsed() >= Duration::from_secs(15);
+            let tx = self.events_tx.clone(); let repaint = ctx.clone();
+            thread::spawn(move || {
+                let changed = retry || files.iter().any(|(path,revision)|project_revision(path) != *revision);
+                let _ = tx.send(Event::PreviewChanges(changed)); repaint.request_repaint();
+            });
+        }
+        ctx.request_repaint_after(Duration::from_secs(2));
         if self.prefs.automatic_project_scan && self.last_project_scan.elapsed() >= Duration::from_secs(self.prefs.project_scan_minutes.clamp(1, 60) * 60) {
             self.scan_projects();
         }
@@ -2482,8 +2521,11 @@ impl eframe::App for Launcher {
             let (bar, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 34.0), egui::Sense::hover());
             let icon_rect = egui::Rect::from_min_size(bar.left_center() + Vec2::new(0.0, -11.0), Vec2::splat(22.0));
             ui.painter().image(self.brand_icon.id(), icon_rect, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
-            ui.painter().text(icon_rect.right_center() + Vec2::new(10.0, 0.0), egui::Align2::LEFT_CENTER, "ArtCraft Master Suite", egui::FontId::proportional(12.0), theme_rgb(222, 223, 228));
+            let title_rect = ui.painter().text(icon_rect.right_center() + Vec2::new(10.0, 0.0), egui::Align2::LEFT_CENTER,tr("ArtCraft Master Suite"), egui::FontId::proportional(12.0), theme_rgb(222, 223, 228));
             let maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            let beta = egui::Rect::from_min_size(egui::pos2(title_rect.right() + 10.0, bar.center().y - 10.5), Vec2::new(48.0, 21.0));
+            ui.painter().rect_filled(beta, 6.0, mix_color(panel(), ACCENT, 0.18));
+            ui.painter().text(beta.center(), egui::Align2::CENTER_CENTER, tr("Beta"), egui::FontId::proportional(10.0), readable_app_color(ACCENT));
             let controls_width = 138.0;
             let drag_rect = egui::Rect::from_min_max(bar.left_top(), egui::pos2(bar.right() - controls_width, bar.bottom()));
             let drag = ui.interact(drag_rect, egui::Id::new("custom-titlebar-drag"), egui::Sense::click_and_drag());
@@ -2518,7 +2560,7 @@ impl eframe::App for Launcher {
         });
         }
         if !self.startup_splash_finished {
-            let duration = Duration::from_secs(5);
+            let duration = Duration::from_secs(3);
             let progress = (self.startup_splash_started.elapsed().as_secs_f32() / duration.as_secs_f32()).min(1.0);
             if progress < 1.0 {
                 self.draw_startup_splash(ctx, progress);
@@ -2559,6 +2601,7 @@ impl eframe::App for Launcher {
                         ui.set_opacity(transition_ease);
                         match self.page {
                             Page::Home => self.home(ui),
+                            Page::Cloud => { egui::ScrollArea::vertical().id_salt("cloud-page").show(ui, |ui| self.cloud_page(ui)); },
                             Page::Apps => self.apps_page(ui),
                             Page::YourApps => self.your_apps_page(ui),
                             Page::Projects => self.projects_page(ui),
@@ -2573,98 +2616,14 @@ impl eframe::App for Launcher {
                     }
                 }
             });
-        if let Some(id) = self.show_remove.clone() {
-            if let Some(app) = app_by_id(&id) {
-                egui::Window::new("Remove app?")
-                    .collapsible(false)
-                    .resizable(false)
-                    .show(ctx, |ui| {
-                        ui.label(format!(
-                            "Remove {} and its installed program files?",
-                            app.name
-                        ));
-                        ui.label(
-                            RichText::new(
-                                "Your creative projects are kept in their original folders.",
-                            )
-                            .size(11.0)
-                            .color(muted()),
-                        );
-                        ui.horizontal(|ui| {
-                            if ui.button("Cancel").clicked() {
-                                self.show_remove = None;
-                            }
-                            if danger_button(ui, "Remove app").clicked() {
-                                self.remove(&id);
-                            }
-                        });
-                    });
-            }
+        self.plugins.tick();
+        self.cloud.tick(&self.projects);
+        if !self.prefs.onboarding_complete {
+            self.onboarding(ctx);
+            ctx.request_repaint_after(Duration::from_millis(200));
+            return;
         }
-        let mut rename_action = None;
-        let mut cancel_rename = false;
-        if let Some(draft) = self.show_project_rename.as_mut() {
-            egui::Window::new("Rename project")
-                .id(egui::Id::new("rename-project-window"))
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label("Choose a new name for this project file.");
-                    ui.horizontal(|ui| {
-                        ui.add_sized(
-                            [300.0, 30.0],
-                            egui::TextEdit::singleline(&mut draft.name),
-                        );
-                        if let Some(extension) = draft.path.extension().and_then(|ext| ext.to_str()) {
-                            ui.label(RichText::new(format!(".{extension}")).color(muted()));
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            cancel_rename = true;
-                        }
-                        if primary_button(ui, "Save name").clicked() {
-                            rename_action = Some((draft.path.clone(), draft.name.clone()));
-                        }
-                    });
-                });
-        }
-        if let Some((path, name)) = rename_action {
-            self.rename_project(&path, &name);
-        } else if cancel_rename {
-            self.show_project_rename = None;
-        }
-        let mut delete_path = None;
-        let mut cancel_delete = false;
-        if let Some(project) = self.show_project_delete.as_ref() {
-            let title = project.title.clone();
-            let path = project.path.clone();
-            egui::Window::new("Delete project?")
-                .id(egui::Id::new("delete-project-window"))
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.label(format!("Delete {title}?"));
-                    ui.label(
-                        RichText::new("This permanently removes the project file from disk.")
-                            .size(12.0)
-                            .color(muted()),
-                    );
-                    ui.horizontal(|ui| {
-                        if ui.button("Cancel").clicked() {
-                            cancel_delete = true;
-                        }
-                        if danger_button(ui, "Delete project").clicked() {
-                            delete_path = Some(path.clone());
-                        }
-                    });
-                });
-        }
-        if let Some(path) = delete_path {
-            self.delete_project(&path);
-        } else if cancel_delete {
-            self.show_project_delete = None;
-        }
+        self.project_dialogs(ctx);
         if self.toast != self.toast_last_message {
             self.toast_last_message = self.toast.clone();
             self.toast_started = self.toast.as_ref().map(|_| Instant::now());
@@ -2711,7 +2670,7 @@ impl eframe::App for Launcher {
                                 }
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new(title).size(12.0).strong().color(foreground()));
-                                    ui.add(egui::Label::new(RichText::new(message).size(11.0).color(theme_rgb(188, 191, 200))).wrap());
+                                    ui.add(egui::Label::new(RichText::new(tr(message)).size(11.0).color(theme_rgb(188, 191, 200))).wrap());
                                 });
                                 if icon_button(ui, ButtonIcon::Close, "Dismiss notification", muted()).clicked() {
                                     self.toast = None;
@@ -2742,6 +2701,7 @@ fn paint_navigation_icon(painter: &egui::Painter, rect: egui::Rect, page: Page, 
             line(rect.right_top() - Vec2::new(4.0, -6.0), rect.right_bottom() - Vec2::new(4.0, 2.0));
             line(rect.left_bottom() + Vec2::new(4.0, -2.0), rect.right_bottom() - Vec2::new(4.0, 2.0));
         }
+        Page::Cloud => { cloud_ui::paint_cloud(painter, rect, color); }
         Page::Apps | Page::YourApps => {
             let s = 4.5;
             for offset in [Vec2::new(-3.0, -3.0), Vec2::new(3.0, -3.0), Vec2::new(-3.0, 3.0), Vec2::new(3.0, 3.0)] {
@@ -2816,7 +2776,7 @@ fn icon_button_sized(
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), egui::Sense::click());
     let response = response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
-        .on_hover_text(tooltip);
+        .on_hover_text(tr(tooltip));
     let hover_t = ui.ctx().animate_bool(response.id, response.hovered());
     let painter = ui.painter();
     painter.rect_filled(
@@ -2898,7 +2858,7 @@ fn icon_button_sized(
         }
         ButtonIcon::Help => {
             painter.circle_stroke(center, 6.5, stroke);
-            painter.text(center + Vec2::new(0.0, -0.5), egui::Align2::CENTER_CENTER, "?", egui::FontId::proportional(12.0), stroke.color);
+            painter.text(center + Vec2::new(0.0, -0.5), egui::Align2::CENTER_CENTER,tr("?"), egui::FontId::proportional(12.0), stroke.color);
             painter.circle_filled(center + Vec2::new(0.0, 4.5), 0.7, stroke.color);
         }
         ButtonIcon::Github => {
@@ -2968,7 +2928,7 @@ fn polished_button(ui: &mut egui::Ui, text: &str, base: Color32, hover: Color32,
     let font = egui::FontId::proportional(13.0);
     let luminance = (0.2126 * base.r() as f32 + 0.7152 * base.g() as f32 + 0.0722 * base.b() as f32) / 255.0;
     let text_color = if luminance > 0.62 { Color32::from_rgb(18, 19, 22) } else { Color32::WHITE };
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, text_color);
+    let galley = ui.painter().layout_no_wrap(tr(text.to_owned()), font, text_color);
     let desired = Vec2::new((galley.size().x + 28.0).max(minimum.x), (galley.size().y + 16.0).max(minimum.y));
     let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -3017,51 +2977,27 @@ fn release_slug(id: &str) -> &str {
 
 fn latest_release(client: &Client, id: &str) -> Result<ReleaseInfo, String> {
     let slug = release_slug(id);
-    let base = format!("https://github.com/storytold/{slug}/releases");
-    let tag_from_page = client
-        .get(format!("{base}/latest"))
-        .send()
-        .and_then(reqwest::blocking::Response::error_for_status)
-        .ok()
-        .and_then(|response| {
-            let segments: Vec<_> = response
-                .url()
-                .path_segments()?
-                .map(str::to_owned)
-                .collect();
-            segments
-                .windows(2)
-                .find(|parts| parts[0] == "tag")
-                .map(|parts| parts[1].clone())
-        });
-    let tag = if let Some(tag) = tag_from_page {
-        tag
-    } else {
-        let atom = client
-            .get(format!("{base}.atom"))
-            .send()
-            .map_err(|error| format!("Could not reach the GitHub releases page: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("Could not reach the GitHub releases page: {error}"))?
-            .text()
-            .map_err(|error| format!("Could not read GitHub's release feed: {error}"))?;
-        let marker = "tag:github.com,2008:Repository/";
-        let tag = atom
-            .find(marker)
-            .and_then(|index| atom[index + marker.len()..].split_once('/').map(|(_, tail)| tail))
-            .map(|tail| tail.split(|c: char| c == '<' || c == '&' || c.is_whitespace()).next().unwrap_or(""))
-            .filter(|tag| !tag.is_empty())
-            .ok_or_else(|| format!("Could not determine the latest release for {}.", app_by_id(id).map(|app| app.name).unwrap_or(id)))?;
-        tag.to_owned()
-    };
-    let version = tag.trim_start_matches('v').to_owned();
-    let package_name = format!("{slug}-{version}-windows-x64-portable.zip");
-    let release_url = format!("https://github.com/storytold/{slug}/releases/download/{tag}");
+    // Select only a published GUI asset for this OS/architecture; never invent URLs.
+    let release: serde_json::Value = client.get(format!("https://api.github.com/repos/storytold/{slug}/releases/latest"))
+        .send().and_then(reqwest::blocking::Response::error_for_status)
+        .map_err(|e|format!("Could not read official release metadata: {e}"))?
+        .json().map_err(|e|format!("Invalid release metadata: {e}"))?;
+    let tag=release["tag_name"].as_str().ok_or("Release tag is missing")?;
+    let version=tag.trim_start_matches('v').to_owned();
+    let package_name=platform::package_name(slug,&version)?;
+    let assets=release["assets"].as_array().ok_or("Release assets are missing")?;
+    let asset=assets.iter().find(|a|a["name"].as_str()==Some(&package_name))
+        .ok_or_else(||format!("No compatible {} release is published for {} ({package_name}).",platform::label(),slug))?;
+    let checksums=assets.iter().find(|a|a["name"].as_str()==Some("SHA256SUMS.txt")).ok_or("Official release checksum file is missing")?;
+    let release_url=format!("https://github.com/storytold/{slug}/releases/download/");
+    let package_url=asset["browser_download_url"].as_str().filter(|u|u.starts_with(&release_url)).ok_or("Invalid release download URL")?.to_owned();
+    let checksums_url=checksums["browser_download_url"].as_str().filter(|u|u.starts_with(&release_url)).ok_or("Invalid checksum URL")?.to_owned();
+
     Ok(ReleaseInfo {
         version,
-        package_url: format!("{release_url}/{package_name}"),
+        package_url,
         package_name,
-        checksums_url: format!("{release_url}/SHA256SUMS.txt"),
+        checksums_url,
     })
 }
 
@@ -3126,10 +3062,10 @@ fn install_release(id: &str, tx: &Sender<Event>) -> Result<String, String> {
             let mut parts = line.split_whitespace();
             let hash = parts.next()?;
             let name = parts.next()?.trim_start_matches('*');
-            name.ends_with(&release.package_name)
+            (name == release.package_name)
                 .then(|| hash.to_ascii_lowercase())
         })
-        .ok_or_else(|| "GitHub's checksum file does not list this Windows package.".to_owned())?;
+        .ok_or_else(|| "GitHub's checksum file does not list this platform package.".to_owned())?;
     if digest != expected {
         return Err(
             "The app package failed its SHA-256 integrity check. The old installation was kept."
@@ -3140,7 +3076,7 @@ fn install_release(id: &str, tx: &Sender<Event>) -> Result<String, String> {
         id.to_owned(),
         "Unpacking app files...".into(),
     ));
-    let target = installed_dir(id).ok_or("Windows local application data folder was not found")?;
+    let target = installed_dir(id).ok_or("The application data folder was not found")?;
     let parent = target.parent().ok_or("Invalid installation path")?;
     fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let temp = parent.join(format!(".{id}-installing"));
@@ -3148,28 +3084,11 @@ fn install_release(id: &str, tx: &Sender<Event>) -> Result<String, String> {
         fs::remove_dir_all(&temp).map_err(|e| e.to_string())?;
     }
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))
-        .map_err(|e| format!("Could not open the official package: {e}"))?;
-    for i in 0..archive.len() {
-        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
-        let Some(relative) = entry.enclosed_name() else {
-            continue;
-        };
-        let output = temp.join(relative);
-        if entry.is_dir() {
-            fs::create_dir_all(&output).map_err(|e| e.to_string())?;
-        } else {
-            if let Some(p) = output.parent() {
-                fs::create_dir_all(p).map_err(|e| e.to_string())?;
-            }
-            let mut file = fs::File::create(&output).map_err(|e| e.to_string())?;
-            std::io::copy(&mut entry, &mut file).map_err(|e| e.to_string())?;
-        }
-    }
+    if let Err(error)=platform::unpack(&bytes,&temp,id) { let _=fs::remove_dir_all(&temp);return Err(error); }
     if find_executable(&temp, id).is_none() {
         let _ = fs::remove_dir_all(&temp);
         return Err(
-            "The downloaded package did not contain the expected Windows app executable.".into(),
+            "The downloaded package did not contain the expected app executable for this platform.".into(),
         );
     }
     let backup = parent.join(format!(".{id}-previous"));
@@ -3192,28 +3111,19 @@ fn install_release(id: &str, tx: &Sender<Event>) -> Result<String, String> {
     Ok(release.version)
 }
 
-fn app_data() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .map(|p| p.join("ArtCraftLauncher"))
-        .or_else(|| {
-            std::env::var_os("APPDATA")
-                .map(PathBuf::from)
-                .map(|p| p.join("ArtCraftLauncher"))
-        })
-}
-fn installed_dir(id: &str) -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA")
-        .map(PathBuf::from)
-        .map(|p| p.join("Programs").join("ArtCraft Apps").join(id))
-}
+fn app_data() -> Option<PathBuf> { platform::data_dir() }
+fn installed_dir(id: &str) -> Option<PathBuf> { platform::install_dir(id) }
 fn preferences_path() -> Option<PathBuf> {
     app_data().map(|p| p.join("preferences.json"))
 }
 fn read_preferences() -> Preferences {
     preferences_path()
         .and_then(|p| fs::read(p).ok())
-        .and_then(|b| serde_json::from_slice(&b).ok())
+        .and_then(|b| {
+            let value: serde_json::Value = serde_json::from_slice(&b).ok()?;
+            // Older preferences have no completion flag: show setup once for them too.
+            serde_json::from_value(value).ok()
+        })
         .unwrap_or_default()
 }
 fn save_preferences(prefs: &Preferences) {
@@ -3234,43 +3144,7 @@ fn detect_install(app: &AppInfo) -> Option<String> {
         None
     }
 }
-fn find_executable(root: &Path, id: &str) -> Option<PathBuf> {
-    // Prefer the renamed GUI executable, then recognize an older installation.
-    let exact = format!("{}.exe", release_slug(id));
-    let legacy = format!("{id}.exe");
-    for name in [&exact, &legacy] {
-        if let Some(entry) = WalkDir::new(root).max_depth(4).into_iter().filter_map(Result::ok)
-            .find(|entry| entry.file_type().is_file() && entry.file_name().to_string_lossy().eq_ignore_ascii_case(name)) {
-            return Some(entry.into_path());
-        }
-    }
-    WalkDir::new(root)
-        .max_depth(4)
-        .into_iter()
-        .filter_map(Result::ok)
-        .find(|entry| {
-            entry.file_type().is_file()
-                && entry
-                    .file_name()
-                    .to_string_lossy()
-                    .eq_ignore_ascii_case(&exact)
-        })
-        .map(|e| e.into_path())
-        .or_else(|| {
-            WalkDir::new(root)
-                .max_depth(4)
-                .into_iter()
-                .filter_map(Result::ok)
-                .find(|entry| {
-                    entry.file_type().is_file()
-                        && entry
-                            .path()
-                            .extension()
-                            .is_some_and(|e| e.eq_ignore_ascii_case("exe"))
-                })
-                .map(|e| e.into_path())
-        })
-}
+fn find_executable(root: &Path, id: &str) -> Option<PathBuf> { platform::executable(root,id) }
 fn app_by_id(id: &str) -> Option<&'static AppInfo> {
     APPS.iter().find(|app| app.id == id)
 }
@@ -3288,8 +3162,10 @@ fn scan_roots(roots: &[PathBuf], previous: &HashMap<PathBuf, Project>) -> Vec<Pr
             .into_iter()
             .filter_entry(|entry| {
                 let name = entry.file_name().to_string_lossy().to_lowercase();
+                let managed_resource = entry.path().join(".artcraft-backups").is_file() || ["plugins", "assets", "exports"].contains(&name.as_str())
+                    && entry.path().parent().is_some_and(|parent| parent.join(".artcraft-suite.json").is_file());
                 !entry.file_type().is_dir()
-                    || (!name.starts_with('.')
+                    || (!managed_resource && !name.starts_with('.')
                         && ![
                             "node_modules",
                             "target",
@@ -3327,7 +3203,8 @@ fn scan_roots(roots: &[PathBuf], previous: &HashMap<PathBuf, Project>) -> Vec<Pr
             let size_bytes = metadata.as_ref().map_or(0, |m| m.len());
             let modified = metadata.as_ref().and_then(|m| m.modified().ok()).map(DateTime::<Local>::from);
             let title = entry.file_name().to_string_lossy().to_string();
-            if let Some(old) = previous.get(&path).filter(|p| p.modified == modified && p.size_bytes == size_bytes && p.preview.is_some()) {
+            let revision = project_revision(&path);
+            if let Some(old) = previous.get(&path).filter(|p| p.revision == revision && p.preview.is_some()) {
                 projects.push(old.clone());
                 continue;
             }
@@ -3336,11 +3213,13 @@ fn scan_roots(roots: &[PathBuf], previous: &HashMap<PathBuf, Project>) -> Vec<Pr
             } else if size_bytes <= 2 * 1024 * 1024 * 1024 && matches!(ext.as_str(), "psd" | "psb") {
                 project_preview::psd_canvas(&path).or_else(|| psd_thumbnail(&path))
             } else { None };
-            let decoded = native.map(|image| (image, "Saved canvas preview"))
+            let mut decoded = native.map(|image| (image, "Saved canvas preview"))
                 .or_else(|| preview_formats::load(&path, &ext));
+            if project_revision(&path) != revision { decoded = None; }
             let preview_note = decoded.as_ref().map_or("Preview unavailable for this file", |(_, note)| *note);
             let preview = decoded.map(|(image, _)| Arc::new(image));
             projects.push(Project {
+                revision,
                 path,
                 title,
                 app,
@@ -3421,10 +3300,8 @@ fn open_url(url: &str) {
             .args(["url.dll,FileProtocolHandler", url])
             .spawn();
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = Command::new("xdg-open").arg(url).spawn();
-    }
+    #[cfg(target_os = "linux")]
+    { let _ = platform::spawn(Command::new("xdg-open").arg(url)); }
 }
 
 fn main() -> eframe::Result {
@@ -3480,8 +3357,8 @@ fn apply_window_rounding(frame: &eframe::Frame) {
 fn settings_section(ui: &mut egui::Ui, title: &str, description: &str, content: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(14).inner_margin(20).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.label(RichText::new(title).size(17.0).strong());
-        ui.label(RichText::new(description).size(12.0).color(muted()));
+        ui.label(RichText::new(tr(title)).size(17.0).strong());
+        ui.label(RichText::new(tr(description)).size(12.0).color(muted()));
         ui.add_space(10.0);
         content(ui);
     });
@@ -3491,8 +3368,8 @@ fn settings_section(ui: &mut egui::Ui, title: &str, description: &str, content: 
 fn setting_toggle(ui: &mut egui::Ui, title: &str, description: &str, value: &mut bool) {
     let width = ui.available_width();
     let text_width = (width - 68.0).max(80.0);
-    let title_galley = ui.painter().layout(title.to_owned(), egui::FontId::proportional(14.0), foreground(), text_width);
-    let description_galley = ui.painter().layout(description.to_owned(), egui::FontId::proportional(12.0), muted(), text_width);
+    let title_galley = ui.painter().layout(tr(title.to_owned()), egui::FontId::proportional(14.0), foreground(), text_width);
+    let description_galley = ui.painter().layout(tr(description.to_owned()), egui::FontId::proportional(12.0), muted(), text_width);
     let text_height = title_galley.size().y + 5.0 + description_galley.size().y;
     let (row, _) = ui.allocate_exact_size(Vec2::new(width, (text_height + 16.0).max(56.0)), egui::Sense::hover());
     let top = row.center().y - text_height * 0.5;
@@ -3556,9 +3433,9 @@ fn dashboard_metric(ui: &mut egui::Ui, label: &str, value: &str, caption: &str, 
     response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, format!("{label}: {value}. {caption}")));
     ui.painter().rect_filled(rect, 12.0, if response.hovered() { card() } else { panel() });
     ui.painter().rect_stroke(rect, 12.0, egui::Stroke::new(1.0_f32, if response.hovered() { theme_rgb(78, 70, 103) } else { border() }), egui::StrokeKind::Inside);
-    ui.painter().text(rect.min + Vec2::new(18.0, 20.0), egui::Align2::LEFT_CENTER, label, egui::FontId::proportional(10.0), muted());
+    ui.painter().text(rect.min + Vec2::new(18.0, 20.0), egui::Align2::LEFT_CENTER,tr(label), egui::FontId::proportional(10.0), muted());
     ui.painter().text(rect.min + Vec2::new(18.0, 55.0), egui::Align2::LEFT_CENTER, value, egui::FontId::proportional(28.0), foreground());
-    ui.painter().text(rect.min + Vec2::new(18.0, 89.0), egui::Align2::LEFT_CENTER, caption, egui::FontId::proportional(11.0), muted());
+    ui.painter().text(rect.min + Vec2::new(18.0, 89.0), egui::Align2::LEFT_CENTER,tr(caption), egui::FontId::proportional(11.0), muted());
     paint_navigation_icon(ui.painter(), egui::Rect::from_center_size(rect.right_top() + Vec2::new(-26.0, 53.0), Vec2::splat(22.0)), page, theme_rgb(169, 147, 238));
     response
 }
@@ -3611,6 +3488,34 @@ fn apply_theme(ctx: &egui::Context, light: bool) {
     ctx.set_style(style);
 }
 
+// Keep the gutter stable; visibility is driven by scrolling, not pointer hover.
+fn update_scrollbar_visibility(ctx: &egui::Context) {
+    let id = egui::Id::new("suite-last-scroll");
+    let (now, scrolling, dragging) = ctx.input(|i| (
+        i.time,
+        i.raw_scroll_delta != Vec2::ZERO || i.smooth_scroll_delta != Vec2::ZERO
+            || [egui::Key::PageUp, egui::Key::PageDown, egui::Key::Home, egui::Key::End,
+                egui::Key::ArrowUp, egui::Key::ArrowDown].iter().any(|key| i.key_pressed(*key)),
+        i.pointer.primary_down() && i.pointer.delta() != Vec2::ZERO,
+    ));
+    let mut last = ctx.data(|data| data.get_temp::<f64>(id)).unwrap_or(-100.0);
+    if scrolling || dragging {
+        last = now;
+        ctx.data_mut(|data| data.insert_temp(id, last));
+    }
+    let visibility = (1.0 - ((now - last - 0.45) / 0.25).max(0.0)).clamp(0.0, 1.0) as f32;
+    ctx.style_mut(|style| {
+        let scroll = &mut style.spacing.scroll;
+        scroll.dormant_handle_opacity = 0.55 * visibility;
+        scroll.active_handle_opacity = 0.65 * visibility;
+        scroll.interact_handle_opacity = 0.9 * visibility;
+        scroll.dormant_background_opacity = 0.0;
+        scroll.active_background_opacity = 0.10 * visibility;
+        scroll.interact_background_opacity = 0.22 * visibility;
+    });
+    if visibility > 0.0 { ctx.request_repaint_after(Duration::from_millis(16)); }
+}
+
 fn suite_scroll_style() -> egui::style::ScrollStyle {
     egui::style::ScrollStyle {
         floating: true,
@@ -3636,10 +3541,129 @@ fn readable_app_color(color: Color32) -> Color32 {
 }
 
 fn reveal_project_path(path: &Path, select: bool) {
+    #[cfg(target_os="linux")]
+    { let folder=if select { path.parent().unwrap_or(path) } else { path }; let _=platform::spawn(Command::new("xdg-open").arg(folder)); }
     #[cfg(target_os = "windows")]
     {
         let mut command = Command::new("explorer.exe");
         if select { command.arg(format!("/select,{}", path.display())); } else { command.arg(path); }
         let _ = command.spawn();
     }
+}
+
+
+fn paint_suite_splash(
+    painter: &egui::Painter, rect: egui::Rect, tint: Color32,
+    logo: Option<egui::TextureId>, name: &str, category: &str, title: &str,
+    description: &str, icons: &[(Option<egui::TextureId>, Color32, char)],
+    progress: f32, reduce_motion: bool,
+) {
+    let smooth = |t: f32| { let t=t.clamp(0.0,1.0); t*t*(3.0-2.0*t) };
+    let elapsed = progress * 3.0;
+    let reveal = if reduce_motion { 1.0 } else { smooth(elapsed / 0.55) };
+    let settled = smooth((progress-0.78)/0.22);
+    let dark = mix_color(Color32::from_rgb(24,20,39),tint,0.18);
+    let left = egui::Rect::from_min_max(rect.min,egui::pos2(rect.left()+242.0,rect.bottom()));
+    painter.rect_filled(rect,18.0,dark);
+    painter.rect_filled(left,18.0,Color32::from_rgb(250,250,252));
+    painter.rect_filled(egui::Rect::from_min_max(left.left_top()+Vec2::new(18.0,0.0),left.right_bottom()),0.0,Color32::from_rgb(250,250,252));
+    painter.rect_stroke(rect,18.0,egui::Stroke::new(1.0_f32,mix_color(dark,tint,0.4)),egui::StrokeKind::Inside);
+    let uv=egui::Rect::from_min_max(egui::pos2(0.0,0.0),egui::pos2(1.0,1.0));
+    let draw_mark = |p: &egui::Painter, mark: egui::Rect| {
+        if let Some(texture)=logo {p.image(texture,mark,uv,Color32::WHITE);}
+        else {p.rect_filled(mark,10.0,tint);p.text(mark.center(),egui::Align2::CENTER_CENTER,tr(name.chars().next().unwrap_or('A')),egui::FontId::proportional(mark.height()*0.55),Color32::WHITE);}
+    };
+    draw_mark(painter,egui::Rect::from_min_size(left.min+Vec2::new(28.0,30.0),Vec2::splat(38.0)));
+    let copy=painter.with_clip_rect(left.shrink(22.0));
+    let offset=Vec2::new(0.0,if reduce_motion {0.0}else{8.0*(1.0-reveal)});
+    copy.text(left.min+Vec2::new(28.0,95.0)+offset,egui::Align2::LEFT_TOP,tr(category),egui::FontId::proportional(10.0),mix_color(tint,Color32::BLACK,0.22));
+    let title_galley=copy.layout(tr(title),egui::FontId::proportional(22.0),Color32::from_rgb(25,26,30),184.0);
+    let description_y=(120.0+title_galley.size().y+12.0).max(186.0);
+    copy.galley(left.min+Vec2::new(28.0,120.0)+offset,title_galley,Color32::from_rgb(25,26,30));
+    let description=copy.layout(tr(description.to_string()),egui::FontId::proportional(12.0),Color32::from_rgb(91,94,101),184.0);
+    copy.galley(left.min+Vec2::new(28.0,description_y)+offset,description,Color32::from_rgb(91,94,101));
+    copy.text(left.min+Vec2::new(28.0,266.0),egui::Align2::LEFT_TOP,tr(if progress<0.8 {"PREPARING YOUR WORKSPACE"}else{"READY TO OPEN"}),egui::FontId::proportional(10.0),Color32::from_rgb(124,127,134));
+    let track=egui::Rect::from_min_size(left.min+Vec2::new(28.0,290.0),Vec2::new(184.0,5.0));
+    painter.rect_filled(track,3.0,Color32::from_rgb(226,226,231));
+    let fill=egui::Rect::from_min_size(track.min,Vec2::new(track.width()*smooth(progress),track.height()));
+    painter.rect_filled(fill,3.0,tint);
+    copy.text(left.left_bottom()+Vec2::new(28.0,-26.0),egui::Align2::LEFT_BOTTOM,tr("A creative workspace by ArtCraft"),egui::FontId::proportional(11.0),Color32::from_rgb(133,136,142));
+
+    let artwork=egui::Rect::from_min_max(egui::pos2(left.right(),rect.top()),rect.max);
+    let art=painter.with_clip_rect(artwork.shrink(1.0));
+    let center=artwork.center()+Vec2::new(0.0,4.0);
+    let breathe=if reduce_motion {0.0}else{(elapsed*2.0).sin()*2.0*(1.0-settled)};
+    for (radius,amount) in [(150.0,0.025),(138.0,0.045),(112.0,0.19),(78.0,0.30)] {
+        art.circle_filled(center,(radius+breathe)*(0.96+0.04*reveal),mix_color(dark,tint,amount));
+    }
+    art.circle_stroke(center,119.0,egui::Stroke::new(1.0_f32,mix_color(dark,tint,0.32)));
+    art.circle_stroke(center,151.0,egui::Stroke::new(1.0_f32,mix_color(dark,tint,0.12)));
+    for (index,(texture,color,initial)) in icons.iter().enumerate() {
+        let entry=if reduce_motion {1.0}else{smooth((elapsed-0.10-index as f32*0.06)/0.48)};
+        let rotation=if reduce_motion {0.0}else{0.28*(elapsed-0.28*settled)};
+        let angle=rotation+std::f32::consts::TAU*index as f32/icons.len().max(1) as f32-std::f32::consts::FRAC_PI_2;
+        let point=center+Vec2::new(angle.cos(),angle.sin())*(104.0+15.0*entry);
+        let tile=egui::Rect::from_center_size(point,Vec2::splat(32.0+6.0*entry));
+        art.rect_filled(tile.translate(Vec2::new(0.0,4.0)).expand(3.0),12.0,Color32::from_black_alpha((35.0*entry) as u8));
+        art.rect_filled(tile.expand(4.0),12.0,mix_color(dark,*color,0.26*entry));
+        art.rect_filled(tile,8.0,color.gamma_multiply(entry));
+        if let Some(texture)=texture {art.image(*texture,tile.shrink(1.5),uv,Color32::WHITE.gamma_multiply(entry));}
+        else {art.text(tile.center(),egui::Align2::CENTER_CENTER,initial,egui::FontId::proportional(18.0),Color32::WHITE.gamma_multiply(entry));}
+        art.rect_stroke(tile.expand(4.0),12.0,egui::Stroke::new(1.0_f32,mix_color(dark,*color,0.5*entry)),egui::StrokeKind::Inside);
+    }
+    draw_mark(&art,egui::Rect::from_center_size(center,Vec2::splat(76.0+4.0*reveal)));
+    art.text(artwork.right_top()+Vec2::new(-28.0,26.0),egui::Align2::RIGHT_TOP,tr(format!("WELCOME TO {}",name.to_uppercase())),egui::FontId::proportional(10.0),Color32::from_white_alpha(180));
+    art.text(artwork.center_bottom()+Vec2::new(0.0,-26.0),egui::Align2::CENTER_BOTTOM,tr("Your tools. Your ideas. Your workspace."),egui::FontId::proportional(11.0),Color32::from_white_alpha(195));
+}
+
+
+// Best-effort disk-cache warming only. Never starts the app, loads a DLL, or
+// waits on this worker before launching. Keep resource use bounded per splash.
+fn warm_launch_files(executable: PathBuf) {
+    let _ = thread::Builder::new().name("app-launch-preload".into()).spawn(move || {
+        let deadline = Instant::now() + Duration::from_millis(2400);
+        let mut files = vec![executable.clone()];
+        if let Some(parent) = executable.parent() {
+            if let Ok(entries) = fs::read_dir(parent) {
+                let mut resources: Vec<_> = entries.take(256).filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .filter(|path| path.extension().and_then(|e| e.to_str()).is_some_and(|e|
+                        ["dll", "pak", "bin", "dat"].iter().any(|extension| e.eq_ignore_ascii_case(extension))))
+                    .collect();
+                resources.sort();
+                files.extend(resources.into_iter().take(24));
+            }
+        }
+        let mut buffer = vec![0_u8; 256 * 1024];
+        let mut total = 0_usize;
+        for path in files {
+            if Instant::now() >= deadline || total >= 96 * 1024 * 1024 { break; }
+            let Ok(mut file) = fs::File::open(path) else { continue; };
+            let mut file_bytes = 0_usize;
+            while Instant::now() < deadline && total < 96 * 1024 * 1024 && file_bytes < 32 * 1024 * 1024 {
+                match file.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(bytes) => { total += bytes; file_bytes += bytes; }
+                }
+            }
+        }
+    });
+}
+
+
+fn project_revision(path: &Path) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hash=std::collections::hash_map::DefaultHasher::new();
+    let Ok(metadata)=fs::metadata(path) else {return 0;};
+    metadata.len().hash(&mut hash);metadata.modified().ok().hash(&mut hash);metadata.created().ok().hash(&mut hash);
+    // Sample the header, middle and tail as well, for saves preserving timestamps.
+    if let Ok(mut file)=fs::File::open(path) {
+        let mut bytes=[0_u8;4096];
+        for offset in [0,metadata.len()/2,metadata.len().saturating_sub(4096)] {
+            if file.seek(SeekFrom::Start(offset)).is_ok() {
+                if let Ok(count)=file.read(&mut bytes) {bytes[..count].hash(&mut hash);}
+            }
+        }
+    }
+    hash.finish()
 }

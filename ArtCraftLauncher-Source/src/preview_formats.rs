@@ -134,6 +134,21 @@ fn waveform(path:&Path)->Option<Preview>{
     for (i,p) in peaks.iter().enumerate(){let half=(p*98.0).round().max(1.0) as u32;for y in 120-half..=120+half{im.put_pixel(i as u32+20,y,image::Rgba([55,188,176,255]));}}
     Some((im,"Audio waveform"))
 }
+#[cfg(target_os="linux")]
+fn linux_pdf(path:&Path)->Option<RgbaImage>{
+    use std::{fs,process::{Command,Stdio},time::{Instant,Duration}};
+    let root=crate::platform::data_dir()?.join("preview-work");fs::create_dir_all(&root).ok()?;
+    let token=format!("pdf-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos());
+    let directory=root.join(token);fs::create_dir(&directory).ok()?;
+    let output=directory.join("page");let image_path=directory.join("page.png");
+    let result=(||{
+        let mut command=Command::new("pdftoppm");command.args(["-f","1","-l","1","-singlefile","-scale-to","512","-png"]).arg(path).arg(&output).stdout(Stdio::null()).stderr(Stdio::null());
+        let mut process=crate::platform::spawn(&mut command).ok()?;let started=Instant::now();
+        loop{if let Some(status)=process.try_wait().ok()?{if !status.success(){return None;}break;}if started.elapsed()>Duration::from_secs(10){let _=process.kill();let _=process.wait();return None;}std::thread::sleep(Duration::from_millis(25));}
+        raster(&read(&image_path)?)
+    })();
+    let _=fs::remove_file(image_path);let _=fs::remove_dir(directory);result
+}
 pub fn load(path:&Path,ext:&str)->Option<Preview>{
     let result=match ext {
         "svg"=>read(path).and_then(|b|svg(&b)).map(|p|(p,"SVG preview (embedded assets only)")),
@@ -146,6 +161,8 @@ pub fn load(path:&Path,ext:&str)->Option<Preview>{
         _=>None,
     };
     if result.is_some(){return result;}
+    #[cfg(target_os="linux")]
+    if matches!(ext,"pdf"|"ai"){if let Some(image)=linux_pdf(path){return Some((image,"First page preview"));}}
     #[cfg(target_os="windows")]
     {
         if matches!(ext,"pdf"|"ai") {if let Some(im)=crate::preview_windows::pdf(path){return Some((im,"First page preview"));}}

@@ -1,0 +1,42 @@
+{
+  "app-id": "io.github.ZifuM.ArtCraftMasterSuite",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "24.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
+  "command": "artcraft-launcher",
+  "finish-args": [
+    "--share=network",
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--talk-name=org.kde.StatusNotifierWatcher",
+    "--talk-name=org.freedesktop.Flatpak",
+    "--filesystem=~/.config/autostart:create"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin"
+  },
+  "modules": [
+    {
+      "name": "artcraft-master-suite",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cargo build --offline --locked --release --bin artcraft-launcher",
+        "install -Dm755 target/release/artcraft-launcher /app/bin/artcraft-launcher",
+        "install -Dm644 assets/artcraft-icon.png /app/share/icons/hicolor/256x256/apps/io.github.ZifuM.ArtCraftMasterSuite.png",
+        "install -Dm644 io.github.ZifuM.ArtCraftMasterSuite.desktop /app/share/applications/io.github.ZifuM.ArtCraftMasterSuite.desktop",
+        "install -Dm644 io.github.ZifuM.ArtCraftMasterSuite.metainfo.xml /app/share/metainfo/io.github.ZifuM.ArtCraftMasterSuite.metainfo.xml"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "source"
+        }
+      ]
+    }
+  ]
+}

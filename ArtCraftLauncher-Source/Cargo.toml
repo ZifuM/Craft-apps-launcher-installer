@@ -1,6 +1,6 @@
 [package]
 name = "artcraft-launcher"
-version = "2.2.0"
+version = "3.0.0"
 edition = "2024"
 description = "A native desktop hub for the ArtCraft creative apps"
 license = "MIT"
@@ -11,7 +11,6 @@ base64 = "0.22"
 resvg = "0.45"
 roxmltree = "0.20"
 symphonia = { version = "0.5", default-features = false, features = ["wav", "aiff", "pcm", "flac"] }
-windows = { version = "0.58", features = ["Data_Pdf", "Storage", "Storage_Streams", "Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_Graphics_Gdi"] }
 chrono = { version = "0.4", features = ["serde"] }
 eframe = { version = "0.31.1", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "webp"] }
@@ -22,8 +21,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
 walkdir = "2"
+wasmparser = { path = "vendor/wasmparser-0.240.0" }
 zip = { version = "2", default-features = false, features = ["deflate"] }
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_Security", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging"] }
 
 [[bin]]
 name = "artcraft-launcher"
@@ -38,3 +37,15 @@ lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Data_Pdf", "Storage", "Storage_Streams", "Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_Graphics_Gdi"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_System_LibraryLoader", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Registry", "Win32_Security", "Win32_Security_Cryptography", "Win32_UI_Input_KeyboardAndMouse", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3.6", features = ["blocking"] }
+
+[patch.crates-io]
+ksni = { path = "vendor/ksni-0.3.6" }
+pastey = { path = "vendor/pastey-0.2.3" }
+tokio-macros = { path = "vendor/tokio-macros-2.7.2" }

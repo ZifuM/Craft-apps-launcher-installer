@@ -9,7 +9,7 @@ impl Launcher {
         ui.push_id(id, |ui| {
             ui.horizontal(|ui| {
                 if ui.link(if self.detail_parent == Page::YourApps { "Your apps" } else { "App Manager" }).clicked() { self.page = self.detail_parent; }
-                ui.label(RichText::new("/  Workspace").color(muted()));
+                ui.label(RichText::new(tr("/  Workspace")).color(muted()));
             });
             ui.add_space(18.0);
             let (hero, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 208.0), egui::Sense::hover());
@@ -43,7 +43,7 @@ impl Launcher {
             if icon_button(&mut controls_ui, ButtonIcon::Github, "Source repository", muted()).clicked() { open_url(&format!("{REPO}/{}",release_slug(id))); }
             if icon_button(&mut controls_ui, ButtonIcon::Globe, "App website", muted()).clicked() { open_url("https://getartcraft.com/apps"); }
             if let Some(progress) = &state.busy { ui.horizontal(|ui| { ui.spinner(); ui.label(progress); }); }
-            if let Some(error) = &state.error { ui.label(RichText::new(error).color(theme_rgb(255,156,135))); }
+            if let Some(error) = &state.error { ui.label(RichText::new(tr(error)).color(theme_rgb(255,156,135))); }
             ui.add_space(22.0);
             let count = self.projects.iter().filter(|p|p.app.id==id).count();
             let mut tab = *self.workspace_tabs.get(id).unwrap_or(&0);
@@ -53,13 +53,12 @@ impl Launcher {
                 let rect=egui::Rect::from_min_size(tabs.min+Vec2::new(index as f32*(width+8.0),0.0),Vec2::new(width,40.0));
                 let active=tab==index as u8;
                 if action(ui,rect,("workspace-tab",index),label,if active {mix_color(panel(),app.tint,0.16)} else {panel()},if active {foreground()} else {muted()},true).clicked() {tab=index as u8;}
-                if active {ui.painter().rect_filled(egui::Rect::from_min_size(rect.left_bottom()+Vec2::new(12.0,2.0),Vec2::new(width-24.0,2.0)),1.0,app.tint);}
             }
             self.workspace_tabs.insert(id.into(),tab);
             ui.add_space(22.0);
             match tab {
                 1 => self.workspace_placeholder(ui,&app,false),
-                2 => self.workspace_placeholder(ui,&app,true),
+                2 => self.plugins_page(ui,&app),
                 _ => self.workspace_projects(ui,&app,count),
             }
         });
@@ -67,19 +66,19 @@ impl Launcher {
 
     fn workspace_projects(&mut self, ui:&mut egui::Ui, app:&AppInfo, count:usize) {
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Project library").size(20.0).color(foreground()));
+            ui.label(RichText::new(tr("Project library")).size(20.0).color(foreground()));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui| {
-                if ui.link("Browse all projects").clicked() {
+                if ui.link(tr("Browse all projects")).clicked() {
                     self.project_filter=app.name.into();self.projects_tab=false;self.project_scope="All projects".into();self.search.clear();self.page=Page::Projects;
                 }
             });
         });
-        ui.label(RichText::new(format!("{count} projects in your connected folders. Pick up where you left off.")).size(12.0).color(muted()));
+        ui.label(RichText::new(tr(format!("{count} projects in your connected folders. Pick up where you left off."))).size(12.0).color(muted()));
         ui.add_space(16.0);
         let (row,_) = ui.allocate_exact_size(Vec2::new(ui.available_width(),40.0),egui::Sense::hover());
         let search_rect=egui::Rect::from_min_max(row.min,egui::pos2(row.right()-138.0,row.bottom()));
         let mut search_ui=ui.new_child(egui::UiBuilder::new().max_rect(search_rect));
-        search_ui.add_sized(search_rect.size(),egui::TextEdit::singleline(self.workspace_search.entry(app.id.into()).or_default()).hint_text("Search projects by name or format…").margin(Vec2::new(12.0,10.0)));
+        search_ui.add_sized(search_rect.size(),egui::TextEdit::singleline(self.workspace_search.entry(app.id.into()).or_default()).hint_text(tr("Search projects by name or format…")).margin(Vec2::new(12.0,10.0)));
         let mut view_ui=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(egui::pos2(row.right()-122.0,row.top()+2.0),Vec2::new(122.0,36.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
         self.project_view_controls(&mut view_ui);
         ui.add_space(16.0);
@@ -88,26 +87,27 @@ impl Launcher {
         if projects.is_empty() {
             egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(14).inner_margin(28).show(ui,|ui| {
                 ui.set_width(ui.available_width());
-                ui.label(RichText::new(if query.is_empty(){"Your next project starts here"}else{"No matching projects"}).size(19.0));
+                ui.label(RichText::new(tr(if query.is_empty(){"Your next project starts here"}else{"No matching projects"})).size(19.0));
                 ui.add_space(6.0);
-                ui.label(RichText::new(if query.is_empty(){"Connect a project folder to see previews and open your work from this workspace."}else{"Try another name or file format."}).color(muted()));
+                ui.label(RichText::new(tr(if query.is_empty(){"Connect a project folder to see previews and open your work from this workspace."}else{"Try another name or file format."})).color(muted()));
                 ui.add_space(14.0);
                 if !query.is_empty() && secondary_button(ui,"Clear search").clicked(){self.workspace_search.remove(app.id);}
                 if query.is_empty() && secondary_button(ui,"Manage project folders").clicked(){self.projects_tab=true;self.page=Page::Projects;}
             });
         } else { self.project_gallery(ui,projects); }
         ui.add_space(22.0);
-        ui.collapsing("Supported file formats",|ui| {ui.label(RichText::new(app.filetypes.iter().map(|e|format!(".{e}")).collect::<Vec<_>>().join("   ")).color(muted()));});
+        ui.collapsing(tr("Supported file formats"),|ui| {ui.label(RichText::new(tr(app.filetypes.iter().map(|e|format!(".{e}")).collect::<Vec<_>>().join("   "))).color(muted()));});
     }
 
     fn workspace_placeholder(&mut self,ui:&mut egui::Ui,app:&AppInfo,plugins:bool) {
+        app_screens::experimental_banner(ui);
         egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(16).inner_margin(26).show(ui,|ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new("COMING SOON").size(10.0).strong().color(readable_app_color(app.tint)));
+            ui.label(RichText::new(tr("COMING SOON")).size(10.0).strong().color(readable_app_color(app.tint)));
             ui.add_space(10.0);
-            ui.label(RichText::new(if plugins {format!("Extend your {} workspace",app.name)}else{format!("A home for your {} assets",app.name)}).size(24.0).color(foreground()));
+            ui.label(RichText::new(tr(if plugins {format!("Extend your {} workspace",app.name)}else{format!("A home for your {} assets",app.name)})).size(24.0).color(foreground()));
             ui.add_space(8.0);
-            ui.label(RichText::new(if plugins {"Plugin management is planned for a future release. Installing, enabling and updating plugins is not available yet."}else{"Asset management is planned for a future release. Importing and organizing assets is not available yet."}).color(muted()));
+            ui.label(RichText::new(tr(if plugins {"Plugin management is planned for a future release. Installing, enabling and updating plugins is not available yet."}else{"Asset management is planned for a future release. Importing and organizing assets is not available yet."})).color(muted()));
             ui.add_space(24.0);
             let sections=if plugins {[("Installed plugins","A dedicated place for your app extensions."),("Discover extensions","Find tools that complement your workflow."),("Updates & compatibility","Review plugin versions and app compatibility.")]} else {[("Your asset library","Keep reusable files together for this app."),("Collections","Organize resources by project or purpose."),("Asset details","Browse previews and resource information.")]};
             // Informational panels only: no pretend install/import actions or data.
@@ -116,7 +116,7 @@ impl Launcher {
                     ui.set_width(ui.available_width());
                     ui.label(RichText::new(title).size(15.0).color(foreground()));
                     ui.add_space(4.0);
-                    ui.label(RichText::new(description).size(12.0).color(muted()));
+                    ui.label(RichText::new(tr(description)).size(12.0).color(muted()));
                 });
                 ui.add_space(10.0);
             }

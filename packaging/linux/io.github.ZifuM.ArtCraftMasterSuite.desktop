@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ArtCraft Master Suite
+Comment=Manage your ArtCraft apps and projects
+Exec=artcraft-launcher
+Icon=io.github.ZifuM.ArtCraftMasterSuite
+Terminal=false
+Categories=Graphics;Utility;
+StartupWMClass=artcraft-launcher

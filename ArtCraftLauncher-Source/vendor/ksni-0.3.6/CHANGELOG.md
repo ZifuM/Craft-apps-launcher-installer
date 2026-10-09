@@ -1,0 +1,115 @@
+# 0.3.6 (2026-07-15)
+
+## Added
+- `Tray::menu_about_to_show`, nothing changes if you don't override this method
+
+# 0.3.5 (2026-06-10)
+
+## Added
+- Mocked protocol test suites for StatusNotifierWatcher, StatusNotifierItem, and DBusMenu across tokio, async-io, and blocking runtimes
+- Lifetime management for the `async-io` executor to ensure no background thread when all trays stopped
+- Allow SubMenu to be nested to an unlimited depth
+
+## Changed
+- Report the unsupported `tokio + async-io` feature combination with an explicit compile-time error
+
+## Fixed (spec compliance)
+- Correct DBusMenu `GetGroupProperties` behavior on empty `ids`
+- Correct DBusMenu `GetLayout` `recursionDepth` (previously returned `recursionDepth + 1`)
+- Correct DBusMenu `AboutToShow` and `AboutToShowGroup` argument handling (regression introduced in 0.3)
+- Correct DBusMenu status mapping for property updates (regression introduced in 0.3)
+
+## Fixed
+- Don't panic when a D-Bus client sends a illegal root menu `clicked` event (`id=0`)
+
+# 0.3.4 (2026-04-10)
+
+## Fixed
+- Compatibility with Snap strict confinement (#37) by @sniper1720
+
+# 0.3.3 (2025-12-20)
+
+## Added
+- A new transparent builder pattern to configure `spawn` options, which contains:
+  - `TrayServiceBuilder`: just a helper
+  - `TrayMethods::disable_dbus_name`: replacement for `TrayMethods::spawn_without_dbus_name`
+  e.g. `tray.spawn_without_dbus_name()` -> `tray.disable_dbus_name(true).spawn()`
+- `TrayMethods::assume_sni_available`: allow you to setup the tray before the desktop environment
+  is fully initialized. Thanks to @FrostyCoolSlug
+- Blocking version of above API
+- More documentation
+- More tests
+
+## Changed
+- Switch to pastey crate: https://rustsec.org/advisories/RUSTSEC-2024-0436 by @NyCodeGHG
+
+## Deprecated
+- `TrayMethods::spawn_without_dbus_name`
+- `blocking::TrayMethods::spawn_without_dbus_name`
+Will be removed in the next major release.
+
+# 0.3.2 (2025-12-07)
+
+## Fixed
+- `ksni::spawn` hang under `async-io` feature
+    This is a regression introduced in 34e4161
+    `spawn_without_dbus_name` is unaffected
+- Deadlock in macro generated properties changed signal
+    All `StatusNotifierItem` properties except `Status` are unaffected
+
+# 0.3.1 (2024-12-07)
+
+- Fixed compatibility of `Orientation` with org.kde.StatusNotifierItem, previously only with
+  org.freedesktop.StatusNotifierItem
+- Documentation updates
+
+# 0.3.0 (2024-12-05)
+
+Replaced dbus-rs with zbus, got async
+
+All methods of `TrayService` have been moved into `TrayMethods`. `TrayMethods` is a trait that is
+implemented by default for all `T where T: Tray` ([RFC #445]), so you no longer need to wrap a
+`Tray` with `TrayService` to call the spawn method.
+
+The new `spawn` method returns a `Result<Handle, Error>`. Any error during the tray creation is
+returned directly. If the spawn succeeds, tray is created. No longer need to impl `watcher_online`
+and `watcher_offline` to handle the result of a spawned tray.
+
+The `run` method has been removed, no one's actually using it. With this change, we don't have to
+provide a separate method to return the `Handle`, it can be returned directly by the spawn method.
+
+Big thanks to [@lunixbochs](https://github.com/lunixbochs)
+
+[RFC #445]: https://rust-lang.github.io/rfcs/0445-extension-trait-conventions.html
+
+## Added
+
+- `TrayMethods`
+- `OfflineReason`, see below #Changed
+- `Orientation`
+- `blocking::*` for blocking API
+- `Tray::MENU_ON_ACTIVATE` for the org.freedesktop.StatusNotifierItem.ItemIsMenu
+
+## Removed
+
+- `TrayService`, see the new `TrayMethods`
+- Deprecated methods in 0.2
+
+## Changed
+
+- All methods that should be async are now async
+- `Tray` now requires `Send`. If you are using `.spawn`, this won't affect you.
+- `Tray::id` is a required method now, default impl removed
+- `Tray::scroll(&mut self, i32, &str)` -> `Tray::scroll(&mut self, i32, Orientation)`
+- `Tray::watcher_offline` have a new `OfflineReason` argument
+- `Tray::watcher_online` or `Tray::watcher_offline` won't be called immediately after tray started,
+now only be called after the state of watcher changed
+
+# 0.2.2 (2024-04-27)
+
+## New methods
+
+- `TrayService::run_without_dbus_name`
+- `TrayService::spwan_without_dbus_name`
+
+See https://github.com/iovxw/ksni/pull/25 for details

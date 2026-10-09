@@ -1,11 +1,16 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
+#[cfg(not(target_os="windows"))]
+fn main(){eprintln!("Use the AppImage or Flatpak Linux package.");}
+
+#[cfg(target_os="windows")]
+mod windows_setup {
 use std::{fs, io::Write, path::PathBuf, process::Command};
 
 const LAUNCHER: &[u8] = include_bytes!("../../target/release/artcraft-launcher.exe");
 const ICON: &[u8] = include_bytes!("../../assets/artcraft-icon.ico");
 
-fn main() {
+pub fn run() {
     if let Err(error) = install() {
         let message = format!("ArtCraft Master Suite could not be installed.\n\n{error}");
         #[cfg(target_os = "windows")]
@@ -226,3 +231,7 @@ fn close_installed_launcher(folder: &std::path::Path) -> Result<(), Box<dyn std:
     }
     Ok(())
 }
+
+}
+#[cfg(target_os="windows")]
+fn main(){windows_setup::run();}

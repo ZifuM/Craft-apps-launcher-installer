@@ -4,6 +4,10 @@ A native Windows home for Storytold’s open-source creative and office apps. In
 
 > ArtCraft Master Suite is an independent community project. It is not affiliated with Adobe Inc. Adobe and other product names and marks belong to their respective owners.
 
+## Linux source preview
+
+Linux AppImage and Flatpak build files are in `../packaging/linux/`. See [Linux build instructions](../docs/LINUX.md). Native Linux builds are not yet validated; the Linux source archive includes build inputs, not runnable binaries.
+
 ## Features
 
 - **Install and manage apps:** Find releases, install or update apps, open them, or uninstall them from one place.

@@ -1,0 +1,115 @@
+name: Release downloads
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build (for example v3.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-downloads-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
+      - id: version
+        name: Check release version and destination
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, tomllib
+          version = tomllib.loads(pathlib.Path('ArtCraftLauncher-Source/Cargo.toml').read_text())['package']['version']
+          tag = os.environ['RELEASE_TAG']
+          if tag not in (version, 'v' + version):
+              raise SystemExit(f'Release tag must be {version} or v{version}, matching Cargo.toml')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'tag={tag}\n')
+          PY
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
+
+  linux:
+    needs: version
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ needs.version.outputs.tag }}
+
+  windows:
+    needs: version
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows x64 installer
+        shell: pwsh
+        working-directory: ArtCraftLauncher-Source
+        run: |
+          cargo build --locked --release --bin artcraft-launcher
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo build --locked --release --bin artcraft-setup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Path ../dist/windows -Force | Out-Null
+          Copy-Item -LiteralPath target/release/artcraft-setup.exe -Destination ../dist/windows/ArtCraftMasterSuite-Setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArtCraftMasterSuite-Windows-x64
+          if-no-files-found: error
+          path: dist/windows/ArtCraftMasterSuite-Setup.exe
+
+  publish:
+    needs: [version, linux, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: ArtCraftMasterSuite-*
+          path: packages
+      - name: Collect downloads and create release checksums
+        run: |
+          python3 - <<'PY'
+          import hashlib, pathlib, shutil
+          source = pathlib.Path('packages')
+          destination = pathlib.Path('release')
+          destination.mkdir()
+          names = ['ArtCraftMasterSuite-Setup.exe'] + [
+              f'ArtCraftMasterSuite-Linux-{arch}.{suffix}'
+              for arch in ('x86_64', 'aarch64') for suffix in ('AppImage', 'flatpak')
+          ]
+          sums = []
+          for name in names:
+              candidates = list(source.rglob(name))
+              if len(candidates) != 1 or candidates[0].stat().st_size == 0:
+                  raise SystemExit(f'Missing, empty or duplicate release download: {name}')
+              target = destination / name
+              shutil.copyfile(candidates[0], target)
+              with target.open('rb') as stream:
+                  digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+              sums.append(f'{digest}  {name}\n')
+          (destination / 'SHA256SUMS.txt').write_text(''.join(sums))
+          PY
+      - name: Attach installable files to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          echo "Windows EXE and Linux AppImage/Flatpak downloads attached to release $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
