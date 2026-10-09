@@ -136,17 +136,24 @@ fn file_metadata(path: Option<&Path>) -> Vec<(String, String)> {
     rows
 }
 fn detail(ui: &mut egui::Ui, label: &str, value: &str) {
-    ui.label(
-        RichText::new(tr(label))
-            .font(toolbar::font(11.0, false))
-            .color(muted()),
-    );
-    ui.add(
-        egui::Label::new(RichText::new(value).font(toolbar::font(13.0, false)))
-            .wrap()
-            .selectable(true),
-    );
-    ui.add_space(8.0);
+    egui::Frame::new()
+        .fill(card())
+        .corner_radius(10)
+        .inner_margin(12)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(
+                RichText::new(tr(label))
+                    .font(toolbar::font(11.0, true))
+                    .color(muted()),
+            );
+            ui.add(
+                egui::Label::new(RichText::new(value).font(toolbar::font(13.0, false)))
+                    .wrap()
+                    .selectable(true),
+            );
+        });
+    ui.add_space(4.0);
 }
 
 impl Launcher {
@@ -155,11 +162,15 @@ impl Launcher {
         let file = directory
             .as_ref()
             .and_then(|path| platform::executable(path, app.id));
-        // Do not size shortcuts from the popup's default available width: doing
-        // so permanently expands the popup before its text can determine its size.
-        let menu_width = ["Check for updates", "Properties", "Uninstall…"]
+        let shortcuts = [
+            (platform::reveal_label(), file.is_some()),
+            ("Copy file path", file.is_some()),
+            ("Open install folder", directory.is_some()),
+            ("Open workspace", true),
+        ];
+        let width = shortcuts
             .iter()
-            .map(|label| {
+            .map(|(label, _)| {
                 ui.painter()
                     .layout_no_wrap(tr(*label), toolbar::font(13.0, false), foreground())
                     .size()
@@ -167,55 +178,9 @@ impl Launcher {
                     + 24.0
             })
             .fold(184.0_f32, f32::max);
-        ui.set_width(menu_width);
-        let (row, _) = ui.allocate_exact_size(Vec2::new(menu_width, 36.0), egui::Sense::hover());
-        let width = 36.0;
-        let start = (menu_width - (4.0 * width + 3.0 * 6.0)) * 0.5;
-        for (index, (label, enabled)) in [
-            (platform::reveal_label(), file.is_some()),
-            ("Copy file path", file.is_some()),
-            ("Open install folder", directory.is_some()),
-            ("Open workspace", true),
-        ]
-        .into_iter()
-        .enumerate()
-        {
-            let rect = egui::Rect::from_min_size(
-                row.min + Vec2::new(start + index as f32 * (width + 6.0), 0.0),
-                Vec2::new(width, 36.0),
-            );
-            let mut button_ui = toolbar::cell(ui, rect);
-            button_ui.spacing_mut().interact_size = Vec2::splat(36.0);
-            button_ui.spacing_mut().button_padding = Vec2::splat(4.0);
-            let response = button_ui.add_enabled(
-                enabled,
-                egui::Button::new("")
-                    .min_size(rect.size())
-                    .fill(card())
-                    .corner_radius(6),
-            );
-            let color = if enabled {
-                foreground()
-            } else {
-                muted().gamma_multiply(0.4)
-            };
-            paint_shortcut(ui.painter(), response.rect.center(), index, color);
-            if response.has_focus() {
-                ui.painter().rect_stroke(
-                    response.rect,
-                    6,
-                    egui::Stroke::new(1.0_f32, ACCENT),
-                    egui::StrokeKind::Inside,
-                );
-            }
-            response.widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, tr(label))
-            });
-            if response
-                .on_hover_text(tr(label))
-                .on_disabled_hover_text(tr(label))
-                .clicked()
-            {
+        ui.set_width(width);
+        for (index, (label, enabled)) in shortcuts.into_iter().enumerate() {
+            if item(ui, label, enabled, false).clicked() {
                 match index {
                     0 => {
                         if let Some(path) = &file {
@@ -233,19 +198,13 @@ impl Launcher {
                         }
                     }
                     _ => {
-                        self.detail_parent = if self.page == Page::YourApps {
-                            Page::YourApps
-                        } else {
-                            Page::Apps
-                        };
+                        self.detail_parent = Page::Apps;
                         self.page = Page::App(app.id);
                     }
                 }
                 ui.close_menu();
             }
         }
-        ui.add_space(3.0);
-        ui.separator();
     }
     pub(crate) fn project_more_menu(&mut self, ui: &mut egui::Ui, project: &Project) {
         ui.push_id(("project-actions", &project.path), |ui| {
@@ -336,29 +295,75 @@ impl Launcher {
             .show(ctx, |ui| {
                 toolbar::style(ui);
                 ui.set_width((ctx.screen_rect().width() - 80.0).clamp(280.0, 520.0));
-                ui.horizontal(|ui| {
-                    self.app_logo(ui, &app, 40.0);
-                    ui.vertical(|ui| {
-                        ui.label(RichText::new(tr("Properties")).font(toolbar::font(22.0, true)));
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(
-                                    properties
-                                        .project
-                                        .as_ref()
-                                        .map(|p| p.title.as_str())
-                                        .unwrap_or(app.name),
-                                )
-                                .color(muted()),
-                            )
-                            .truncate(),
-                        );
-                    });
-                });
+                let background = ui.painter().add(egui::Shape::Noop);
+                let identity =
+                    egui::Frame::new()
+                        .corner_radius(14)
+                        .inner_margin(18)
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            let name = properties
+                                .project
+                                .as_ref()
+                                .map(|p| p.title.as_str())
+                                .unwrap_or(app.name);
+                            let copy_width = (ui.available_width() - 92.0).max(80.0);
+                            let title = ui.painter().layout(
+                                name.into(),
+                                toolbar::font(26.0, true),
+                                foreground(),
+                                copy_width,
+                            );
+                            let eyebrow = ui.painter().layout(
+                                tr("Properties").to_uppercase(),
+                                toolbar::font(10.0, true),
+                                readable_app_color(app.tint),
+                                copy_width,
+                            );
+                            let category = ui.painter().layout(
+                                tr(app.category),
+                                toolbar::font(11.0, false),
+                                muted(),
+                                copy_width,
+                            );
+                            let height =
+                                (eyebrow.size().y + 8.0 + title.size().y + 8.0 + category.size().y)
+                                    .max(72.0);
+                            let (rect, _) = ui.allocate_exact_size(
+                                Vec2::new(ui.available_width(), height),
+                                egui::Sense::hover(),
+                            );
+                            let logo = egui::Rect::from_center_size(
+                                rect.left_center() + Vec2::new(36.0, 0.0),
+                                Vec2::splat(72.0),
+                            );
+                            if let Some(texture) = &state.icon {
+                                egui::Image::new((texture.id(), texture.size_vec2()))
+                                    .corner_radius(14)
+                                    .paint_at(ui, logo);
+                            } else {
+                                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(logo));
+                                self.app_logo(&mut child, &app, 72.0);
+                            }
+                            let start = rect.min + Vec2::new(92.0, 0.0);
+                            let title_pos = start + Vec2::new(0.0, eyebrow.size().y + 8.0);
+                            let category_pos = title_pos + Vec2::new(0.0, title.size().y + 8.0);
+                            ui.painter()
+                                .galley(start, eyebrow, readable_app_color(app.tint));
+                            ui.painter().galley(title_pos, title, foreground());
+                            ui.painter().galley(category_pos, category, muted());
+                        });
+                ui.painter().set(
+                    background,
+                    egui::Shape::mesh(identity_mesh(identity.response.rect, app.tint, false)),
+                );
                 ui.add_space(16.0);
                 egui::ScrollArea::vertical()
                     .id_salt("properties-body")
-                    .max_height((ctx.screen_rect().height() - 240.0).max(160.0))
+                    .max_height(
+                        (ctx.screen_rect().height() - identity.response.rect.height() - 180.0)
+                            .max(100.0),
+                    )
                     .show(ui, |ui| {
                         if properties.project.is_none() {
                             detail(ui, "Description", &tr(app.blurb));
@@ -465,85 +470,6 @@ impl Launcher {
             });
         if !close && !modal.should_close() {
             self.properties = Some(properties);
-        }
-    }
-}
-
-/// Conventional folder-search, copy, open-folder and window-layout symbols.
-fn paint_shortcut(painter: &egui::Painter, center: egui::Pos2, index: usize, color: Color32) {
-    let stroke = egui::Stroke::new(1.5_f32, color);
-    let point = |x, y| center + Vec2::new(x, y);
-    match index {
-        0 => {
-            // Folder and magnifying glass: locate the executable in File Explorer.
-            painter.add(egui::Shape::line(
-                vec![
-                    point(-2.0, 6.0),
-                    point(-8.0, 6.0),
-                    point(-8.0, -6.0),
-                    point(-3.0, -6.0),
-                    point(-1.0, -3.0),
-                    point(7.0, -3.0),
-                    point(7.0, -1.0),
-                ],
-                stroke,
-            ));
-            let lens = point(3.0, 3.0);
-            painter.circle_stroke(lens, 3.5, stroke);
-            painter.line_segment([lens + Vec2::splat(2.5), lens + Vec2::splat(5.0)], stroke);
-        }
-        1 => {
-            // Two overlapping sheets: copy the file path.
-            painter.add(egui::Shape::line(
-                vec![
-                    point(-4.0, 3.0),
-                    point(-7.0, 3.0),
-                    point(-7.0, -7.0),
-                    point(3.0, -7.0),
-                    point(3.0, -4.0),
-                ],
-                stroke,
-            ));
-            painter.rect_stroke(
-                egui::Rect::from_min_max(point(-3.0, -3.0), point(7.0, 7.0)),
-                2,
-                stroke,
-                egui::StrokeKind::Inside,
-            );
-        }
-        2 => {
-            // Open folder with a slanted front flap.
-            painter.add(egui::Shape::line(
-                vec![
-                    point(-8.0, 6.0),
-                    point(-8.0, -6.0),
-                    point(-3.0, -6.0),
-                    point(-1.0, -3.0),
-                    point(6.0, -3.0),
-                    point(6.0, -1.0),
-                ],
-                stroke,
-            ));
-            painter.add(egui::Shape::closed_line(
-                vec![
-                    point(-8.0, 6.0),
-                    point(-5.0, -1.0),
-                    point(9.0, -1.0),
-                    point(6.0, 6.0),
-                ],
-                stroke,
-            ));
-        }
-        _ => {
-            // Window with a title bar and sidebar: the app's workspace.
-            painter.rect_stroke(
-                egui::Rect::from_min_max(point(-8.0, -7.0), point(8.0, 7.0)),
-                2,
-                stroke,
-                egui::StrokeKind::Inside,
-            );
-            painter.line_segment([point(-8.0, -2.0), point(8.0, -2.0)], stroke);
-            painter.line_segment([point(-2.0, -2.0), point(-2.0, 7.0)], stroke);
         }
     }
 }

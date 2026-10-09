@@ -4,9 +4,9 @@ A native Windows, Linux and macOS home for Storytold’s open-source creative an
 
 > ArtCraft Master Suite is an independent community project. It is not affiliated with Adobe Inc. Adobe and other product names and marks belong to their respective owners.
 
-## Build 3.2 prerelease
+## Build 3.3 prerelease
 
-Version `3.2.0-beta.1` shares the updated interface across all desktop targets. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+Version `3.3.0-beta.1` shares the new banners, app workspaces, compact toolbars, sidebar workspace shortcuts and Properties interface across all desktop targets. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
 
 The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `windows_backup` filenames now contain shared code. Native operations remain behind target-specific guards. Old view source files remain for reference but are no longer selected by `main.rs`.
 

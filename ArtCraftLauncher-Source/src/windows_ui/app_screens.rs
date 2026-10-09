@@ -137,6 +137,7 @@ pub(super) fn ink_for(tint: Color32) -> Color32 {
 
 impl Launcher {
     fn library_header(&mut self, ui: &mut egui::Ui, collection: bool) {
+        tools::style(ui);
         if tools::header(
             ui,
             if collection {
@@ -147,7 +148,7 @@ impl Launcher {
             if collection {
                 "Your tools, ready to work. Launch an app or open its workspace."
             } else {
-                "Build your toolkit. Discover, install and update your apps."
+                "Creative tools and everyday essentials, together."
             },
             if collection {
                 Page::YourApps
@@ -157,15 +158,99 @@ impl Launcher {
             if collection {
                 "Manage apps"
             } else {
-                "Your apps"
+                "Browse projects"
             },
             false,
         ) {
             self.page = if collection {
                 Page::Apps
             } else {
-                Page::YourApps
+                Page::Projects
             };
+        }
+    }
+
+    fn library_updates(&mut self, ui: &mut egui::Ui) {
+        let apps: Vec<_> = APPS
+            .iter()
+            .copied()
+            .filter(|app| {
+                self.states.get(app.id).is_some_and(|s| {
+                    s.installed.is_some()
+                        && s.latest.is_some()
+                        && s.latest != s.installed
+                        && s.busy.is_none()
+                })
+            })
+            .collect();
+        if apps.is_empty() {
+            return;
+        }
+        egui::Frame::new()
+            .fill(mix_color(panel(), ACCENT, 0.06))
+            .corner_radius(10)
+            .inner_margin(14)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new(format!("{}  {}", apps.len(), tr("Available updates")))
+                            .font(tools::font(13.0, true)),
+                    );
+                    ui.add_space(6.0);
+                    if tools::standard(ui, "Update all", true).clicked() {
+                        for app in &apps {
+                            self.install(*app);
+                        }
+                    }
+                    if tools::standard(ui, "View apps", false).clicked() {
+                        self.filter = "Available updates".into();
+                        self.manager_search.clear();
+                        self.page = Page::Apps;
+                        if let Some(app) = apps.first() {
+                            self.app_category = app.group;
+                        }
+                    }
+                });
+            });
+        ui.add_space(16.0);
+    }
+
+    pub(super) fn app_action_menu(&mut self, ui: &mut egui::Ui, app: AppInfo) {
+        use crate::windows_ui::menus;
+        menus::style(ui);
+        let state = self.states.get(app.id).cloned().unwrap_or_default();
+        let available = state.busy.is_none();
+        self.app_menu_shortcuts(ui, app);
+        if state.installed.is_some() && state.latest.is_some() && state.latest != state.installed {
+            if menus::item(ui, "Install available update", available, false).clicked() {
+                self.install(app);
+                ui.close_menu();
+            }
+        }
+        if menus::item(ui, "Check for updates", available, false).clicked() {
+            self.check_app_release(app);
+            ui.close_menu();
+        }
+        if menus::item(ui, "Properties", true, false).clicked() {
+            self.properties = Some(menus::Properties::app(app));
+            ui.close_menu();
+        }
+        if menus::item(ui, "Source repository", true, false).clicked() {
+            open_url(&format!("{REPO}/{}", release_slug(app.id)));
+            ui.close_menu();
+        }
+        ui.separator();
+        if menus::item(
+            ui,
+            "Uninstall…",
+            available && state.installed.is_some(),
+            true,
+        )
+        .clicked()
+        {
+            self.show_remove = Some(app.id.into());
+            ui.close_menu();
         }
     }
 
@@ -298,7 +383,8 @@ impl Launcher {
                 self.check_releases();
             }
         }
-        tools::divider(ui);
+        // Match the final grid-row spacing plus the community section spacing.
+        ui.add_space(if collection { 4.0 } else { 36.0 });
     }
     pub(super) fn apps_page(&mut self, ui: &mut egui::Ui) {
         if self.prefs.classic_app_screens {
@@ -307,6 +393,7 @@ impl Launcher {
         }
         self.library_header(ui, false);
         self.library_toolbar(ui, false);
+        self.library_updates(ui);
         let query = self.manager_search.trim().to_lowercase();
         let apps: Vec<_> = APPS
             .iter()
@@ -330,30 +417,12 @@ impl Launcher {
                 }
             })
             .collect();
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(tr(format!("{} apps", apps.len())))
-                    .font(tools::font(12.0, true))
-                    .color(muted()),
-            );
-            if self.release_check_busy {
-                ui.spinner();
-                ui.label(
-                    RichText::new(tr("Checking releases"))
-                        .font(tools::font(12.0, false))
-                        .color(muted()),
-                );
+        if !self.manager_search.is_empty() || self.filter != "All apps" {
+            if ui.small_button(tr("Reset filters")).clicked() {
+                self.manager_search.clear();
+                self.filter = "All apps".into();
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if (!self.manager_search.is_empty() || self.filter != "All apps")
-                    && ui.small_button(tr("Reset filters")).clicked()
-                {
-                    self.manager_search.clear();
-                    self.filter = "All apps".into();
-                }
-            });
-        });
-        ui.add_space(12.0);
+        }
         egui::ScrollArea::vertical()
             .id_salt("manager-redesign")
             .show(ui, |ui| {
@@ -420,6 +489,7 @@ impl Launcher {
         }
         self.library_header(ui, true);
         self.library_toolbar(ui, true);
+        self.library_updates(ui);
         let query = self.your_apps_search.trim().to_lowercase();
         let apps: Vec<_> = APPS
             .iter()
@@ -525,43 +595,32 @@ impl Launcher {
             ui.add_space(16.0);
         }
     }
-    fn library_card(&mut self, ui: &mut egui::Ui, app: AppInfo, collection: bool) {
+    fn library_card(&mut self, ui: &mut egui::Ui, app: AppInfo, _collection: bool) {
         let state = self.states.get(app.id).cloned().unwrap_or_default();
         let installed = state.installed.is_some();
         let updating = installed && state.latest.is_some() && state.latest != state.installed;
-        let (rect, response) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 160.0), egui::Sense::click());
-        let hover = if self.prefs.reduce_motion {
-            if response.hovered() { 1.0 } else { 0.0 }
-        } else {
-            ui.ctx().animate_bool(response.id, response.hovered())
-        };
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(
-            rect,
-            12.0,
-            mix_color(
-                panel(),
-                app.tint,
-                if light_theme() { 0.025 } else { 0.035 } + hover * 0.025,
-            ),
+        let height = text_size(236.0);
+        let (rect, response) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), height),
+            egui::Sense::click(),
         );
-        painter.rect_stroke(
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                format!("{} — {}", app.name, tr("Open workspace")),
+            )
+        });
+        let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        crate::windows_ui::identity_surface(
+            ui.painter(),
             rect,
-            12.0,
-            egui::Stroke::new(
-                1.0_f32,
-                mix_color(
-                    border(),
-                    app.tint,
-                    if response.hovered() { 0.45 } else { 0.18 },
-                ),
-            ),
-            egui::StrokeKind::Inside,
+            app.tint,
+            response.hovered() || response.has_focus(),
         );
-        let logo = egui::Rect::from_min_size(rect.min + Vec2::new(20.0, 20.0), Vec2::splat(40.0));
-        painter.rect_filled(logo.expand(5.0), 10.0, mix_color(panel(), app.tint, 0.13));
-        if let Some(texture) = state.icon.as_ref() {
+        let painter = ui.painter_at(rect.shrink(1.0));
+        let logo = egui::Rect::from_min_size(rect.min + Vec2::splat(20.0), Vec2::splat(54.0));
+        if let Some(texture) = &state.icon {
             painter.image(
                 texture.id(),
                 logo,
@@ -569,37 +628,63 @@ impl Launcher {
                 Color32::WHITE,
             );
         } else {
+            painter.rect_filled(logo, 12.0, app.tint);
             painter.text(
                 logo.center(),
                 egui::Align2::CENTER_CENTER,
-                tr(&app.name[..1]),
-                tools::font(22.0, true),
-                readable_app_color(app.tint),
+                &app.name[..1],
+                tools::font(25.0, true),
+                ink_for(app.tint),
             );
         }
-        let text_width = (rect.width() - 132.0).max(1.0);
-        let mut name_ui = tools::cell(
+        let (status, color) = if state.busy.is_some() {
+            ("Working…", readable_app_color(app.tint))
+        } else if state.error.is_some() {
+            ("Needs attention", theme_rgb(225, 112, 114))
+        } else if updating {
+            ("Update available", readable_app_color(app.tint))
+        } else if installed {
+            ("Installed", theme_rgb(102, 192, 154))
+        } else {
+            ("Not installed", muted())
+        };
+        let status_width = (rect.width() - 114.0).max(20.0);
+        let status_galley = painter.layout_no_wrap(tr(status), tools::font(10.0, true), color);
+        let badge_width = (status_galley.size().x + 20.0).min(status_width);
+        let badge = egui::Rect::from_min_size(
+            egui::pos2(rect.right() - 20.0 - badge_width, rect.top() + 22.0),
+            Vec2::new(badge_width, 25.0),
+        );
+        painter.rect_filled(badge, 6.0, mix_color(panel(), color, 0.075));
+        painter.with_clip_rect(badge.shrink(5.0)).galley(
+            badge.center() - status_galley.size() * 0.5,
+            status_galley,
+            color,
+        );
+        let status_response = ui.interact(badge, ui.id().with("app-status"), egui::Sense::hover());
+        status_response.on_hover_text(
+            state
+                .error
+                .as_deref()
+                .or(state.busy.as_deref())
+                .map(tr)
+                .unwrap_or_else(|| tr(status)),
+        );
+        let mut name = tools::cell(
             ui,
             egui::Rect::from_min_size(
-                rect.min + Vec2::new(76.0, 18.0),
-                Vec2::new(text_width, 28.0),
+                rect.min + Vec2::new(20.0, 88.0),
+                Vec2::new(rect.width() - 40.0, text_size(31.0)),
             ),
         );
-        name_ui
-            .add(
-                egui::Label::new(
-                    RichText::new(tr(app.name))
-                        .font(tools::font(18.0, true))
-                        .color(foreground()),
-                )
-                .truncate(),
-            )
-            .on_hover_text(app.name);
+        name.add(
+            egui::Label::new(RichText::new(app.name).font(tools::font(23.0, true))).truncate(),
+        );
         text_at(
             ui,
             egui::Rect::from_min_size(
-                rect.min + Vec2::new(76.0, 46.0),
-                Vec2::new(text_width, 17.0),
+                rect.min + Vec2::new(20.0, 88.0 + text_size(33.0)),
+                Vec2::new(rect.width() - 40.0, text_size(18.0)),
             ),
             app.category,
             10.0,
@@ -608,8 +693,8 @@ impl Launcher {
         let mut description = tools::cell(
             ui,
             egui::Rect::from_min_size(
-                rect.min + Vec2::new(18.0, 77.0),
-                Vec2::new(rect.width() - 36.0, 20.0),
+                rect.min + Vec2::new(20.0, 88.0 + text_size(59.0)),
+                Vec2::new(rect.width() - 40.0, text_size(24.0)),
             ),
         );
         description
@@ -622,83 +707,26 @@ impl Launcher {
                 .truncate(),
             )
             .on_hover_text(tr(app.blurb));
-
         let menu_rect = egui::Rect::from_min_size(
-            egui::pos2(rect.right() - 48.0, rect.top() + 22.0),
-            Vec2::splat(32.0),
+            rect.right_bottom() - Vec2::new(52.0, 54.0),
+            Vec2::splat(34.0),
         );
         let mut menu_ui = tools::cell(ui, menu_rect);
-        menu_ui.spacing_mut().interact_size = Vec2::splat(32.0);
-        menu_ui.spacing_mut().button_padding = Vec2::splat(4.0);
-        let menu = egui::menu::menu_custom_button(
+        crate::windows_ui::menus::more(
             &mut menu_ui,
-            egui::Button::new("")
-                .min_size(Vec2::splat(32.0))
-                .corner_radius(6)
-                .frame(false),
-            |ui| {
-                use crate::windows_ui::menus;
-                menus::style(ui);
-                self.app_menu_shortcuts(ui, app);
-                if menus::item(ui, "Check for updates", state.busy.is_none(), false).clicked() {
-                    self.check_app_release(app);
-                    ui.close_menu();
-                }
-                if menus::item(ui, "Properties", true, false).clicked() {
-                    self.properties = Some(menus::Properties::app(app));
-                    ui.close_menu();
-                }
-                ui.separator();
-                if menus::item(ui, "Uninstall…", installed && state.busy.is_none(), true).clicked()
-                {
-                    self.show_remove = Some(app.id.into());
-                    ui.close_menu();
-                }
-            },
+            &format!("{} — {}", app.name, tr("Details and actions")),
+            |ui| self.app_action_menu(ui, app),
         );
-        let menu_open = menu.inner.is_some();
-        let menu_response = menu.response;
-        for offset in [-4.5, 0.0, 4.5] {
-            painter.circle_filled(
-                menu_response.rect.center() + Vec2::new(0.0, offset),
-                1.5,
-                if menu_open { foreground() } else { muted() },
-            );
-        }
-        if menu_response.has_focus() {
-            painter.rect_stroke(
-                menu_response.rect,
-                6.0,
-                egui::Stroke::new(1.0_f32, ACCENT),
-                egui::StrokeKind::Inside,
-            );
-        }
-        let menu_label = format!("{} — {}", app.name, tr("Details and actions"));
-        menu_response
-            .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, &menu_label));
-        menu_response.on_hover_text(menu_label);
-        // Keep exceptional states discoverable without adding a status row.
-        if state.error.is_some() || updating {
-            let indicator = menu_rect.right_top() + Vec2::new(-3.0, 3.0);
-            painter.circle_filled(
-                indicator,
-                3.0,
-                if state.error.is_some() {
-                    theme_rgb(225, 112, 114)
-                } else {
-                    readable_app_color(app.tint)
-                },
-            );
-        }
-        let enabled = state.busy.is_none() && (installed || app.has_release);
+        response.context_menu(|ui| self.app_action_menu(ui, app));
         let primary = egui::Rect::from_min_size(
-            rect.left_bottom() + Vec2::new(18.0, -52.0),
-            Vec2::new(124.0, 36.0),
+            rect.left_bottom() + Vec2::new(20.0, -54.0),
+            Vec2::new(118.0, 34.0),
         );
+        let enabled = state.busy.is_none() && (installed || app.has_release);
         if action(
             ui,
             primary,
-            "primary",
+            "card-primary",
             if state.busy.is_some() {
                 "Working…"
             } else if installed {
@@ -708,7 +736,7 @@ impl Launcher {
             } else {
                 "Coming soon"
             },
-            if enabled { app.tint } else { card() },
+            app.tint,
             ink_for(app.tint),
             enabled,
         )
@@ -720,12 +748,35 @@ impl Launcher {
                 self.install(app);
             }
         }
-        if response.clicked() && !menu_open {
-            self.detail_parent = if collection {
-                Page::YourApps
-            } else {
-                Page::Apps
-            };
+        let update_rect = egui::Rect::from_min_size(
+            primary.right_top() + Vec2::new(8.0, 0.0),
+            Vec2::new(
+                (menu_rect.left() - primary.right() - 16.0)
+                    .min(100.0)
+                    .max(0.0),
+                34.0,
+            ),
+        );
+        if updating && update_rect.width() >= 70.0 {
+            if action(
+                ui,
+                update_rect,
+                "card-update",
+                "Update",
+                panel(),
+                foreground(),
+                state.busy.is_none(),
+            )
+            .clicked()
+            {
+                self.install(app);
+            }
+        }
+        let child_click = ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| {
+            menu_rect.contains(p) || primary.contains(p) || (updating && update_rect.contains(p))
+        });
+        if response.clicked() && !child_click {
+            self.detail_parent = Page::Apps;
             self.page = Page::App(app.id);
         }
     }

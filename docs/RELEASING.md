@@ -1,14 +1,14 @@
 # Publishing installable downloads
 
-## Build 3.2 prerelease
+## Build 3.3 prerelease
 
-Package version: `3.2.0-beta.1`. Release tag: `v3.2.0-beta.1`.
+Package version: `3.3.0-beta.1`. Release tag: `v3.3.0-beta.1`.
 
 1. Commit and push the intended source, assets, packaging and workflows after approval.
-2. Create a **draft prerelease** for `v3.2.0-beta.1`, targeting that commit. Use `RELEASE_NOTES_3.2.md` for its notes.
-3. Run **Actions → Release downloads → Run workflow**, choosing the updated default branch and that tag.
+2. Create a **draft prerelease** for `v3.3.0-beta.1`, targeting that commit. Use `RELEASE_NOTES_3.3.md` for its notes.
+3. Run **Actions → Release downloads → Run workflow**, choosing the updated default branch and that tag. Set **publish** to true only when publication is authorized.
 4. Wait for all native jobs to succeed. The workflow builds Windows x64, Linux x86_64/ARM64 AppImage and Flatpak packages, and the universal macOS DMG from the tag.
-5. Review/download the packages before publishing the prerelease. Building or uploading assets does not publish a draft.
+5. With **publish** enabled, the workflow publishes the draft only after all six packages and checksums are uploaded. Otherwise, the release stays a draft.
 
 The version job rejects tags that do not match Cargo.toml. Tags with a prerelease suffix are marked as prereleases and excluded from GitHub's latest stable release by the upload job.
 

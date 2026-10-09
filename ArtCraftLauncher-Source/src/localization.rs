@@ -18,6 +18,7 @@ pub fn tr(text: impl ToString) -> String {
     let catalog=CATALOG.get_or_init(|| {
         let mut rows: HashMap<String,Vec<String>>=serde_json::from_str(include_str!("../assets/translations.json")).expect("embedded translation catalog");
         rows.extend(serde_json::from_str::<HashMap<String, Vec<String>>>(include_str!("../assets/translations-windows.json")).expect("desktop translation catalog"));
+        rows.extend(serde_json::from_str::<HashMap<String, Vec<String>>>(include_str!("../assets/translations-design.json")).expect("desktop design translation catalog"));
         let lower: Vec<_>=rows.iter().filter(|(key,_)| !key.contains("{0}")).map(|(key,row)|(key.to_lowercase(),row.clone())).collect();
         rows.extend(lower); rows
     });

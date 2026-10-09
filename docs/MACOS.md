@@ -1,6 +1,6 @@
 # macOS beta
 
-Build 3.2 brings the current shared desktop interface and features to the universal macOS application:
+Build 3.3 brings the current shared desktop interface and features to the universal macOS application:
 
 `macOS-universal.dmg`
 
@@ -8,7 +8,7 @@ The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and 
 
 ## Build status
 
-Build 3.2 compiled for Intel and Apple Silicon on GitHub’s Mac runner. The universal app, code-signature integrity and DMG integrity checks passed. The downloaded `macOS-universal.dmg` matches the draft release checksum. Desktop behavior has not yet been manually validated.
+The release workflow builds `v3.3.0-beta.1` for Intel and Apple Silicon, combines them into a universal app and checks signature and DMG integrity during packaging. The draft is published only after all platform packages have built and been uploaded. Native desktop behavior has not been manually validated for this build.
 
 ## Install
 

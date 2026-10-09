@@ -1,4 +1,4 @@
-//! Shared desktop interface, promoted from the Windows redesign for Build 3.2.
+//! Shared desktop interface for Windows, Linux and macOS — Build 3.3.
 use super::*;
 pub(crate) mod menus;
 pub(crate) mod toolbar;
@@ -71,10 +71,107 @@ pub(super) fn refine_style(style: &mut egui::Style) {
 }
 
 impl Launcher {
+    fn sidebar_app(&mut self, ui: &mut egui::Ui, app: AppInfo) {
+        let compact = self.sidebar_collapsed;
+        let state = self.states.get(app.id).cloned().unwrap_or_default();
+        let selected = self.page == Page::App(app.id);
+        let (rect, response) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 36.0), egui::Sense::click());
+        let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+        response.widget_info(|| {
+            egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, app.name)
+        });
+        if selected || response.hovered() {
+            ui.painter().rect_filled(
+                rect,
+                6.0,
+                mix_color(panel(), app.tint, if selected { 0.13 } else { 0.055 }),
+            );
+        }
+        let icon = egui::Rect::from_center_size(
+            if compact {
+                rect.center()
+            } else {
+                rect.left_center() + Vec2::new(22.0, 0.0)
+            },
+            Vec2::splat(21.0),
+        );
+        if let Some(texture) = state.icon.as_ref() {
+            ui.painter().image(
+                texture.id(),
+                icon,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        } else {
+            ui.painter().rect_filled(icon, 5.0, app.tint);
+        }
+        if !compact {
+            let name = ui.painter().layout_no_wrap(
+                app.name.into(),
+                toolbar::font(12.0, selected),
+                if selected { foreground() } else { muted() },
+            );
+            let clip = egui::Rect::from_min_max(
+                rect.left_top() + Vec2::new(42.0, 0.0),
+                rect.right_bottom() - Vec2::new(24.0, 0.0),
+            );
+            ui.painter().with_clip_rect(clip).galley(
+                egui::pos2(clip.left(), rect.center().y - name.size().y * 0.5),
+                name,
+                if selected { foreground() } else { muted() },
+            );
+        }
+        let update =
+            state.installed.is_some() && state.latest.is_some() && state.latest != state.installed;
+        if state.installed.is_some() || state.busy.is_some() {
+            ui.painter().circle_filled(
+                if compact {
+                    icon.right_bottom() + Vec2::new(1.0, 1.0)
+                } else {
+                    rect.right_center() - Vec2::new(14.0, 0.0)
+                },
+                3.0,
+                if update || state.busy.is_some() {
+                    readable_app_color(app.tint)
+                } else {
+                    theme_rgb(102, 192, 154)
+                },
+            );
+        }
+        if selected {
+            ui.painter().rect_filled(
+                egui::Rect::from_center_size(
+                    rect.left_center() + Vec2::new(2.0, 0.0),
+                    Vec2::new(2.0, 16.0),
+                ),
+                1.0,
+                app.tint,
+            );
+        }
+        response.clone().on_hover_text(format!(
+            "{}\n{}\n{}",
+            app.name,
+            tr(app.blurb),
+            tr(if update {
+                "Update available"
+            } else if state.installed.is_some() {
+                "Installed"
+            } else {
+                "Not installed"
+            })
+        ));
+        response.context_menu(|ui| self.app_action_menu(ui, app));
+        if response.clicked() {
+            self.detail_parent = Page::Apps;
+            self.page = Page::App(app.id);
+        }
+    }
+
     pub(super) fn modern_sidebar(&mut self, ctx: &egui::Context) {
         let compact = self.sidebar_collapsed;
         egui::SidePanel::left("modern-sidebar")
-            .exact_width(if compact { 68.0 } else { 224.0 })
+            .exact_width(if compact { 68.0 } else { 238.0 })
             .resizable(false)
             .show_separator_line(false)
             .frame(
@@ -85,7 +182,7 @@ impl Launcher {
             .show(ctx, |ui| {
                 ui.spacing_mut().item_spacing.y = 6.0;
                 let (brand, _) = ui.allocate_exact_size(
-                    Vec2::new(ui.available_width(), if compact { 44.0 } else { 72.0 }),
+                    Vec2::new(ui.available_width(), if compact { 44.0 } else { 66.0 }),
                     egui::Sense::hover(),
                 );
                 let mark = egui::Rect::from_center_size(
@@ -107,7 +204,7 @@ impl Launcher {
                         brand.left_center() + Vec2::new(53.0, -10.0),
                         egui::Align2::LEFT_CENTER,
                         tr("ArtCraft"),
-                        egui::FontId::proportional(text_size(19.0)),
+                        toolbar::font(19.0, true),
                         foreground(),
                     );
                     ui.painter().text(
@@ -195,13 +292,15 @@ impl Launcher {
                             "Your creative overview",
                             None,
                         );
-                        self.modern_side_link(
-                            ui,
-                            Page::YourApps,
-                            "Your apps",
-                            "Open your collection",
-                            Some(installed),
-                        );
+                        if SHOW_YOUR_APPS {
+                            self.modern_side_link(
+                                ui,
+                                Page::YourApps,
+                                "Your apps",
+                                "Open your collection",
+                                Some(installed),
+                            );
+                        }
                         self.modern_side_link(
                             ui,
                             Page::Projects,
@@ -233,6 +332,20 @@ impl Launcher {
                             "Your project backups",
                             None,
                         );
+                        if !compact {
+                            ui.add_space(22.0);
+                            ui.label(
+                                RichText::new(tr("Workspaces").to_uppercase())
+                                    .font(toolbar::font(10.0, true))
+                                    .color(muted()),
+                            );
+                            ui.add_space(6.0);
+                        } else {
+                            ui.add_space(12.0);
+                        }
+                        for app in APPS.iter().copied() {
+                            self.sidebar_app(ui, app);
+                        }
                     });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     self.modern_side_link(ui, Page::Settings, "Settings", "Make it yours", None);
@@ -276,15 +389,16 @@ impl Launcher {
         count: Option<usize>,
     ) {
         let compact = self.sidebar_collapsed;
-        let selected =
-            self.page == page || (matches!(self.page, Page::App(_)) && self.detail_parent == page);
+        let selected = self.page == page;
         let (rect, response) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), egui::Sense::click());
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 40.0), egui::Sense::click());
         let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
         response.widget_info(|| {
             egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, tr(label))
         });
-        response.clone().on_hover_text(format!("{}\n{}", tr(label), tr(description)));
+        response
+            .clone()
+            .on_hover_text(format!("{}\n{}", tr(label), tr(description)));
         let hover = if self.prefs.reduce_motion {
             if response.hovered() { 1.0 } else { 0.0 }
         } else {
@@ -296,11 +410,11 @@ impl Launcher {
             panel()
         };
         ui.painter()
-            .rect_filled(rect, 11.0, mix_color(base, ACCENT, hover * 0.06));
+            .rect_filled(rect, 7.0, mix_color(base, ACCENT, hover * 0.06));
         if selected {
             ui.painter().rect_stroke(
                 rect,
-                11.0,
+                7.0,
                 egui::Stroke::new(1.0_f32, mix_color(border(), ACCENT, 0.25)),
                 egui::StrokeKind::Inside,
             );
@@ -341,7 +455,15 @@ impl Launcher {
             paint_navigation_icon(
                 ui.painter(),
                 egui::Rect::from_center_size(
-                    center + Vec2::new(0.0, match page { Page::Home => -1.0, Page::Cloud => 1.0, _ => 0.0 }),
+                    center
+                        + Vec2::new(
+                            0.0,
+                            match page {
+                                Page::Home => -1.0,
+                                Page::Cloud => 1.0,
+                                _ => 0.0,
+                            },
+                        ),
                     Vec2::splat(18.0),
                 ),
                 page,
@@ -354,25 +476,60 @@ impl Launcher {
             let center_y = rect.center().y;
             let mut text_right = rect.right() - 12.0;
             if let Some(count) = count {
-                let count_text = if count > 99 { "99+".into() } else { count.to_string() };
-                let count_galley = ui.painter().layout_no_wrap(count_text, egui::FontId::proportional(text_size(10.0)), muted());
-                let badge_size = Vec2::new((count_galley.size().x + 12.0).max(28.0), (count_galley.size().y + 6.0).max(22.0));
+                let count_text = if count > 99 {
+                    "99+".into()
+                } else {
+                    count.to_string()
+                };
+                let count_galley = ui.painter().layout_no_wrap(
+                    count_text,
+                    egui::FontId::proportional(text_size(10.0)),
+                    muted(),
+                );
+                let badge_size = Vec2::new(
+                    (count_galley.size().x + 12.0).max(28.0),
+                    (count_galley.size().y + 6.0).max(22.0),
+                );
                 let badge = egui::Rect::from_center_size(
-                    egui::pos2(rect.right() - 14.0 - badge_size.x * 0.5, center_y), badge_size);
-                ui.painter().rect_filled(badge, 6.0, if selected { mix_color(panel(), ACCENT, 0.18) } else { ink() });
-                ui.painter().galley(badge.center() - count_galley.size() * 0.5, count_galley, muted());
+                    egui::pos2(rect.right() - 14.0 - badge_size.x * 0.5, center_y),
+                    badge_size,
+                );
+                ui.painter().rect_filled(
+                    badge,
+                    6.0,
+                    if selected {
+                        mix_color(panel(), ACCENT, 0.18)
+                    } else {
+                        ink()
+                    },
+                );
+                ui.painter().galley(
+                    badge.center() - count_galley.size() * 0.5,
+                    count_galley,
+                    muted(),
+                );
                 text_right = badge.left() - 12.0;
             }
             let label_rect = egui::Rect::from_min_max(
-                egui::pos2(rect.left() + 45.0, rect.top()), egui::pos2(text_right, rect.bottom()));
+                egui::pos2(rect.left() + 45.0, rect.top()),
+                egui::pos2(text_right, rect.bottom()),
+            );
             let mut job = egui::text::LayoutJob::simple_singleline(
-                tr(label), egui::FontId::proportional(text_size(14.0)), foreground());
+                tr(label),
+                egui::FontId::proportional(text_size(14.0)),
+                foreground(),
+            );
             job.wrap.max_width = label_rect.width().max(1.0);
             job.wrap.max_rows = 1;
             job.wrap.break_anywhere = true;
             let galley = ui.painter().layout_job(job);
-            ui.painter().with_clip_rect(label_rect.intersect(ui.clip_rect())).galley(
-                egui::pos2(label_rect.left(), center_y - galley.size().y * 0.5), galley, foreground());
+            ui.painter()
+                .with_clip_rect(label_rect.intersect(ui.clip_rect()))
+                .galley(
+                    egui::pos2(label_rect.left(), center_y - galley.size().y * 0.5),
+                    galley,
+                    foreground(),
+                );
         }
         if response.clicked() {
             self.page = page;
@@ -407,26 +564,16 @@ impl Launcher {
         let errors = self.states.values().filter(|s| s.error.is_some()).count();
         egui::ScrollArea::vertical().id_salt("home-dashboard").show(ui, |ui| {
             toolbar::style(ui);
-            if toolbar::header(ui,"Home","Your tools and your work, together.",Page::Home,"Manage apps",false) {self.page=Page::Apps;}
-            let show_art=ui.available_width()>850.0;
-            let text_width=ui.available_width()-52.0-if show_art {240.0}else{0.0};
-            let title=ui.painter().layout(tr("From idea to your next project."),toolbar::font(26.0,true),foreground(),text_width);
-            let subtitle=ui.painter().layout(tr("Create, explore, and pick up where you left off."),toolbar::font(13.0,false),muted(),text_width);
-            let title_height=title.size().y;
-            let subtitle_height=subtitle.size().y;
-            let copy_height=title_height+8.0+subtitle_height+20.0+toolbar::HEIGHT;
-            let (banner,_)=ui.allocate_exact_size(Vec2::new(ui.available_width(),(copy_height+48.0).max(208.0)),egui::Sense::hover());
-            ui.painter().rect_filled(banner,12.0,mix_color(panel(),ACCENT,if light_theme(){0.08}else{0.11}));
-            ui.painter().rect_stroke(banner,12.0,egui::Stroke::new(1.0_f32,mix_color(border(),ACCENT,0.25)),egui::StrokeKind::Inside);
-            let copy_start=egui::pos2(banner.left()+26.0,banner.center().y-copy_height*0.5);
-            ui.painter().galley(copy_start,title,foreground());
-            ui.painter().galley(copy_start+Vec2::new(0.0,title_height+8.0),subtitle,muted());
-            let buttons=copy_start+Vec2::new(0.0,title_height+8.0+subtitle_height+20.0);
-            let button_width=["Explore apps", "Your apps", "Browse projects"].iter().map(|label| ui.painter().layout_no_wrap(tr(*label),toolbar::font(13.0,true),foreground()).size().x+56.0).fold(172.0_f32,f32::max).min((text_width-12.0)*0.5);
-            if toolbar::button(ui,egui::Rect::from_min_size(buttons,Vec2::new(button_width,toolbar::HEIGHT)),"home-apps",if installed.is_empty(){"Explore apps"}else{"Your apps"},toolbar::Glyph::Arrow,true,true).clicked() {self.page=if installed.is_empty(){Page::Apps}else{Page::YourApps};}
+            let hero=toolbar::page_banner(ui,"Home","From idea to your next project.",Page::Home);
+            let banner=hero.rect;
+            let show_art=hero.art.is_some();
+            let buttons=hero.actions.min;
+            let text_width=hero.actions.width();
+            let button_width=["Manage apps", "Browse projects"].iter().map(|label| ui.painter().layout_no_wrap(tr(*label),toolbar::font(13.0,true),foreground()).size().x+56.0).fold(172.0_f32,f32::max).min((text_width-12.0)*0.5);
+            if toolbar::button(ui,egui::Rect::from_min_size(buttons,Vec2::new(button_width,toolbar::HEIGHT)),"home-apps","Manage apps",toolbar::Glyph::Arrow,true,true).clicked() {self.page=Page::Apps;}
             if toolbar::button(ui,egui::Rect::from_min_size(buttons+Vec2::new(button_width+12.0,0.0),Vec2::new(button_width,toolbar::HEIGHT)),"home-projects","Browse projects",toolbar::Glyph::Arrow,false,true).clicked() {self.project_filter="All apps".into();self.projects_tab=false;self.project_scope="All projects".into();self.search.clear();self.page=Page::Projects;}
             if show_art {
-                let center = egui::pos2(banner.right() - 143.0, banner.center().y);
+                let center = hero.art.unwrap().center();
                 let painter = ui.painter_at(banner.shrink(10.0));
                 painter.circle_stroke(center, 66.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(76, 61, 107)));
                 painter.circle_filled(center, 52.0, Color32::from_rgb(51, 40, 80));
@@ -437,7 +584,7 @@ impl Launcher {
                     let angle = -1.3 + index as f32 * std::f32::consts::TAU / self.orbit_apps.len() as f32;
                     let position = center + Vec2::new(angle.cos() * 66.0, angle.sin() * 66.0);
                     let progress = index as f32 / self.orbit_apps.len().saturating_sub(1).max(1) as f32;
-                    let size = 22.0 + 14.0 * progress;
+                    let size = 18.0 + 12.0 * progress;
                     let scale = size / 36.0;
                     let tile = egui::Rect::from_center_size(position, Vec2::splat(size));
                     painter.rect_filled(tile.expand(5.0 * scale), 11.0 * scale, mix_color(panel(), app.tint, 0.24));
@@ -450,7 +597,7 @@ impl Launcher {
             ui.add_space(24.0);
             ui.spacing_mut().item_spacing.x = 14.0;
             ui.columns(3, |cols| {
-                if toolbar::metric(&mut cols[0], "Your collection", &installed.len().to_string(), "Installed apps", Page::YourApps).clicked() { self.page = Page::YourApps; }
+                if toolbar::metric(&mut cols[0], "Your collection", &installed.len().to_string(), "Installed apps", Page::YourApps).clicked() { self.page = Page::Apps; }
                 if toolbar::metric(&mut cols[1], "Project library", &self.projects.len().to_string(), &format!("Across {} folders", self.prefs.roots.len()), Page::Projects).clicked() { self.page = Page::Projects; }
                 let caption = if updates > 0 { "View available updates" } else if errors > 0 { "Some checks need attention" } else { "Manage app releases" };
                 if toolbar::metric(&mut cols[2], "App updates", &updates.to_string(), caption, Page::Apps).clicked() {
@@ -460,7 +607,7 @@ impl Launcher {
                 }
             });
             ui.add_space(26.0);
-            if toolbar::section(ui,"home-collection","Quick launch","Your installed tools, one click away.","View your apps") {self.page=Page::YourApps;}
+            if toolbar::section(ui,"home-collection","Quick launch","Your installed tools, one click away.","Manage apps") {self.page=Page::Apps;}
             if installed.is_empty() {
                 settings_section(ui, "Build your toolkit", "Explore creative and productivity apps, then install the tools you need.", |ui| {
                     if toolbar_primary_button(ui, "Explore apps").clicked() { self.page = Page::Apps; }
@@ -477,8 +624,7 @@ impl Launcher {
                             let response = response.on_hover_cursor(egui::CursorIcon::PointingHand).on_hover_text(tr(if state.busy.is_some() { "App operation in progress".to_owned() } else { format!("Open {}", app.name) }));
                             response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, state.busy.is_none(), format!("Open {}", app.name)));
                             let hover = if self.prefs.reduce_motion { if response.hovered() { 1.0 } else { 0.0 } } else { ui.ctx().animate_bool(response.id, response.hovered()) };
-                            ui.painter().rect_filled(rect, 12.0, mix_color(panel(), app.tint, 0.09 + hover * 0.09));
-                            ui.painter().rect_stroke(rect, 12.0, egui::Stroke::new(1.0_f32, mix_color(border(), app.tint, 0.25 + hover * 0.25)), egui::StrokeKind::Inside);
+                            identity_surface(ui.painter(),rect,app.tint,hover>0.5);
                             let logo = egui::Rect::from_center_size(egui::pos2(rect.left() + 36.0, rect.center().y), Vec2::splat(36.0));
                             if let Some(texture) = state.icon {
                                 ui.painter().image(texture.id(), logo, egui::Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)), Color32::WHITE);
@@ -539,90 +685,116 @@ impl Launcher {
                 self.add_project_folder(path);
             }
         }
-        let navigation = toolbar::row(ui);
-        let tabs = egui::Rect::from_min_size(navigation.min, Vec2::new(300.0, toolbar::HEIGHT));
-        if let Some(index) = toolbar::segments(
-            ui,
-            tabs,
-            "project-sections",
-            &[
-                ("Library", self.projects.len()),
-                ("Folders", self.prefs.roots.len()),
-            ],
-            usize::from(self.projects_tab),
-        ) {
-            self.projects_tab = index == 1;
-        }
+        // One toolbar at every width; narrow windows can scroll horizontally.
+        let toolbar_width = ui.available_width();
+        egui::ScrollArea::horizontal()
+            .id_salt("project-library-toolbar")
+            .show(ui, |ui| {
+                let gap = 8.0;
+                let tabs_width = text_size(224.0);
+                let app_width = text_size(126.0);
+                let scope_width = text_size(120.0);
+                let sort_width = text_size(156.0);
+                let refresh_width = 40.0;
+                let views_width = 116.0;
+                let fixed_width = tabs_width
+                    + app_width
+                    + scope_width
+                    + sort_width
+                    + refresh_width
+                    + views_width
+                    + gap * 6.0;
+                let width = toolbar_width.max(fixed_width + 220.0);
+                ui.set_width(width);
+                let row = toolbar::row(ui);
+                let rect = |left: f32, width: f32| {
+                    egui::Rect::from_min_size(
+                        row.min + Vec2::new(left, 0.0),
+                        Vec2::new(width, toolbar::HEIGHT),
+                    )
+                };
+                if let Some(index) = toolbar::segments(
+                    ui,
+                    rect(0.0, tabs_width),
+                    "project-sections",
+                    &[
+                        ("Library", self.projects.len()),
+                        ("Folders", self.prefs.roots.len()),
+                    ],
+                    usize::from(self.projects_tab),
+                ) {
+                    self.projects_tab = index == 1;
+                }
+                if self.projects_tab {
+                    return;
+                }
+                let mut x = tabs_width + gap;
+                let mut apps = vec!["All apps"];
+                apps.extend(APPS.iter().map(|app| app.name));
+                toolbar::select(
+                    ui,
+                    rect(x, app_width),
+                    "library-app",
+                    &mut self.project_filter,
+                    &apps,
+                );
+                x += app_width + gap;
+                toolbar::select(
+                    ui,
+                    rect(x, scope_width),
+                    "library-scope",
+                    &mut self.project_scope,
+                    &["All projects", "Favorites", "Last 7 days"],
+                );
+                x += scope_width + gap;
+                let old_sort = self.prefs.project_sort.clone();
+                toolbar::select(
+                    ui,
+                    rect(x, sort_width),
+                    "library-sort",
+                    &mut self.prefs.project_sort,
+                    &["Recently modified", "Name A-Z", "Largest first", "By app"],
+                );
+                if old_sort != self.prefs.project_sort {
+                    save_preferences(&self.prefs);
+                }
+                x += sort_width + gap;
+                let mut refresh = toolbar::cell(ui, rect(x, refresh_width));
+                if self.prefs.scanning {
+                    refresh.disable();
+                }
+                if icon_button_sized(
+                    &mut refresh,
+                    ButtonIcon::Refresh,
+                    "Refresh library",
+                    muted(),
+                    refresh_width,
+                )
+                .clicked()
+                {
+                    self.scan_projects();
+                }
+                x += refresh_width + gap;
+                toolbar::search(
+                    ui,
+                    rect(x, row.width() - x - views_width - gap),
+                    "project-search",
+                    &mut self.search,
+                    "Search projects, formats or folders",
+                );
+                if toolbar::views(
+                    ui,
+                    rect(row.width() - views_width, views_width),
+                    &mut self.prefs.project_view,
+                ) {
+                    save_preferences(&self.prefs);
+                }
+            });
+        toolbar::divider(ui);
         if self.projects_tab {
-            toolbar::divider(ui);
             self.project_folders_page(ui);
             return;
         }
-        toolbar::search(
-            ui,
-            egui::Rect::from_min_max(navigation.min + Vec2::new(316.0, 0.0), navigation.max),
-            "project-search",
-            &mut self.search,
-            "Search projects, formats or folders",
-        );
-        ui.add_space(8.0);
-        let filters = toolbar::row(ui);
-        let rect = |left: f32, width: f32| {
-            egui::Rect::from_min_size(
-                filters.min + Vec2::new(left, 0.0),
-                Vec2::new(width, toolbar::HEIGHT),
-            )
-        };
-        let mut apps = vec!["All apps"];
-        apps.extend(APPS.iter().map(|app| app.name));
-        toolbar::select(
-            ui,
-            rect(0.0, 142.0),
-            "library-app",
-            &mut self.project_filter,
-            &apps,
-        );
-        toolbar::select(
-            ui,
-            rect(150.0, 132.0),
-            "library-scope",
-            &mut self.project_scope,
-            &["All projects", "Favorites", "Last 7 days"],
-        );
-        let old_sort = self.prefs.project_sort.clone();
-        toolbar::select(
-            ui,
-            rect(290.0, 166.0),
-            "library-sort",
-            &mut self.prefs.project_sort,
-            &["Recently modified", "Name A-Z", "Largest first", "By app"],
-        );
-        if old_sort != self.prefs.project_sort {
-            save_preferences(&self.prefs);
-        }
-        let mut refresh = toolbar::cell(ui, rect(464.0, 40.0));
-        if self.prefs.scanning {
-            refresh.disable();
-        }
-        if icon_button_sized(
-            &mut refresh,
-            ButtonIcon::Refresh,
-            "Refresh library",
-            muted(),
-            40.0,
-        )
-        .clicked()
-        {
-            self.scan_projects();
-        }
-        if toolbar::views(
-            ui,
-            rect(filters.width() - 116.0, 116.0),
-            &mut self.prefs.project_view,
-        ) {
-            save_preferences(&self.prefs);
-        }
-        toolbar::divider(ui);
         let query = self.search.trim().to_lowercase();
         let cutoff = Local::now() - chrono::Duration::days(7);
         let mut list: Vec<_> = self
@@ -906,7 +1078,12 @@ impl Launcher {
         let badge = egui::Rect::from_min_size(rect.min + Vec2::new(55.0, 48.0), Vec2::splat(22.0));
         ui.painter().rect_filled(badge, 6.0, panel());
         cloud_ui::paint_backup(ui.painter(), badge, summary.state);
-        ui.interact(badge, ui.id().with(("project-backup-status", &project.path)), egui::Sense::hover()).on_hover_text(summary.tooltip);
+        ui.interact(
+            badge,
+            ui.id().with(("project-backup-status", &project.path)),
+            egui::Sense::hover(),
+        )
+        .on_hover_text(summary.tooltip);
         let mut actions = toolbar::cell(ui, actions_rect);
         self.project_more_menu(&mut actions, project);
         if response.double_clicked() {
@@ -1358,65 +1535,69 @@ impl Launcher {
                 "App credits",
                 "Created by Storytold and the app contributors. Explore each project's source on GitHub.",
                 |ui| {
-                    for (index, app) in APPS.iter().enumerate() {
-                        ui.push_id(("app-credit", app.id), |ui| {
-                            let (row, _) = ui.allocate_exact_size(
-                                Vec2::new(ui.available_width(), 60.0),
-                                egui::Sense::hover(),
-                            );
-                            ui.painter().rect_filled(row, 10.0, card());
-                            let logo = egui::Rect::from_min_size(
-                                row.min + Vec2::new(12.0, 14.0),
-                                Vec2::splat(32.0),
-                            );
-                            let mut logo_ui = ui.new_child(egui::UiBuilder::new().max_rect(logo));
-                            self.app_logo(&mut logo_ui, app, 32.0);
-                            let text_width = (row.width() - 186.0).max(20.0);
-                            app_screens::text_at(
-                                ui,
-                                egui::Rect::from_min_size(
-                                    row.min + Vec2::new(58.0, 10.0),
-                                    Vec2::new(text_width, 23.0),
-                                ),
-                                app.name,
-                                14.0,
-                                foreground(),
-                            );
-                            let repository = format!("storytold/{}", release_slug(app.id));
-                            app_screens::text_at(
-                                ui,
-                                egui::Rect::from_min_size(
-                                    row.min + Vec2::new(58.0, 34.0),
-                                    Vec2::new(text_width, 18.0),
-                                ),
-                                &repository,
-                                11.0,
-                                muted(),
-                            )
-                            .on_hover_text(&repository);
-                            let button = egui::Rect::from_min_size(
-                                egui::pos2(row.right() - 112.0, row.top() + 13.0),
-                                Vec2::new(100.0, 34.0),
-                            );
-                            let url = format!("{REPO}/{}", release_slug(app.id));
-                            if app_screens::action(
-                                ui,
-                                button,
-                                "credit-github",
-                                "GitHub",
-                                panel(),
-                                readable_app_color(app.tint),
-                                true,
-                            )
-                            .on_hover_text(&url)
-                            .clicked()
-                            {
-                                open_url(&url);
+                    ui.spacing_mut().item_spacing.x = 12.0;
+                    for apps in APPS.chunks(2) {
+                        ui.columns(2, |columns| {
+                            for (app, ui) in apps.iter().zip(columns.iter_mut()) {
+                                ui.push_id(("app-credit", app.id), |ui| {
+                                    let (row, _) = ui.allocate_exact_size(
+                                        Vec2::new(ui.available_width(), 60.0),
+                                        egui::Sense::hover(),
+                                    );
+                                    ui.painter().rect_filled(row, 10.0, card());
+                                    let logo = egui::Rect::from_min_size(
+                                        row.min + Vec2::new(12.0, 14.0),
+                                        Vec2::splat(32.0),
+                                    );
+                                    let mut logo_ui =
+                                        ui.new_child(egui::UiBuilder::new().max_rect(logo));
+                                    self.app_logo(&mut logo_ui, app, 32.0);
+                                    let text_width = (row.width() - 186.0).max(20.0);
+                                    app_screens::text_at(
+                                        ui,
+                                        egui::Rect::from_min_size(
+                                            row.min + Vec2::new(58.0, 10.0),
+                                            Vec2::new(text_width, 23.0),
+                                        ),
+                                        app.name,
+                                        14.0,
+                                        foreground(),
+                                    );
+                                    let repository = format!("storytold/{}", release_slug(app.id));
+                                    app_screens::text_at(
+                                        ui,
+                                        egui::Rect::from_min_size(
+                                            row.min + Vec2::new(58.0, 34.0),
+                                            Vec2::new(text_width, 18.0),
+                                        ),
+                                        &repository,
+                                        11.0,
+                                        muted(),
+                                    )
+                                    .on_hover_text(&repository);
+                                    let button = egui::Rect::from_min_size(
+                                        egui::pos2(row.right() - 112.0, row.top() + 13.0),
+                                        Vec2::new(100.0, 34.0),
+                                    );
+                                    let url = format!("{REPO}/{}", release_slug(app.id));
+                                    if app_screens::action(
+                                        ui,
+                                        button,
+                                        "credit-github",
+                                        "GitHub",
+                                        panel(),
+                                        readable_app_color(app.tint),
+                                        true,
+                                    )
+                                    .on_hover_text(&url)
+                                    .clicked()
+                                    {
+                                        open_url(&url);
+                                    }
+                                });
                             }
                         });
-                        if index + 1 < APPS.len() {
-                            ui.add_space(4.0);
-                        }
+                        ui.add_space(4.0);
                     }
                 },
             );
@@ -1461,4 +1642,58 @@ fn toolbar_secondary_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
 }
 fn toolbar_primary_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     toolbar::standard(ui, label, true)
+}
+
+/// A subtle app-color wash, tessellated within rounded corners.
+pub(super) fn identity_mesh(rect: egui::Rect, tint: Color32, hover: bool) -> egui::Mesh {
+    let radius = 14.0_f32.min(rect.height() * 0.5);
+    let mut mesh = egui::Mesh::default();
+    let color = |point: egui::Pos2| {
+        let x = ((point.x - rect.left()) / rect.width().max(1.0)).clamp(0.0, 1.0);
+        let y = ((point.y - rect.top()) / rect.height().max(1.0)).clamp(0.0, 1.0);
+        mix_color(
+            panel(),
+            tint,
+            (if light_theme() { 0.065 } else { 0.15 }) * (1.0 - x * 0.72) * (1.0 - y)
+                + if hover { 0.025 } else { 0.0 },
+        )
+    };
+    mesh.colored_vertex(rect.center(), color(rect.center()));
+    for (center, start) in [
+        (rect.left_top() + Vec2::splat(radius), std::f32::consts::PI),
+        (
+            rect.right_top() + Vec2::new(-radius, radius),
+            std::f32::consts::PI * 1.5,
+        ),
+        (rect.right_bottom() - Vec2::splat(radius), 0.0),
+        (
+            rect.left_bottom() + Vec2::new(radius, -radius),
+            std::f32::consts::FRAC_PI_2,
+        ),
+    ] {
+        for step in 0..=8 {
+            let point = center
+                + Vec2::angled(start + step as f32 / 8.0 * std::f32::consts::FRAC_PI_2) * radius;
+            mesh.colored_vertex(point, color(point));
+        }
+    }
+    let count = mesh.vertices.len() as u32 - 1;
+    for index in 1..=count {
+        mesh.add_triangle(0, index, if index == count { 1 } else { index + 1 });
+    }
+    mesh
+}
+
+pub(super) fn identity_surface(p: &egui::Painter, rect: egui::Rect, tint: Color32, hover: bool) {
+    let radius = 14.0_f32.min(rect.height() * 0.5);
+    p.add(egui::Shape::mesh(identity_mesh(rect, tint, hover)));
+    p.rect_stroke(
+        rect,
+        radius,
+        egui::Stroke::new(
+            1.0_f32,
+            mix_color(border(), tint, if hover { 0.4 } else { 0.09 }),
+        ),
+        egui::StrokeKind::Inside,
+    );
 }

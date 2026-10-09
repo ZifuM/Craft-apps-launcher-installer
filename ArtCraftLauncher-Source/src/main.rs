@@ -55,6 +55,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const REPO: &str = "https://github.com/storytold";
 const ACCENT: Color32 = Color32::from_rgb(130, 99, 255);
 
+// Keep the collection implementation available while its navigation is hidden.
+const SHOW_YOUR_APPS: bool = false;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Page {
     Cloud,
@@ -241,6 +244,7 @@ struct Preferences {
     #[serde(default)]
     project_view: ProjectView,
     cloud_project_view: ProjectView,
+    workspace_project_view: ProjectView,
     text_scale: u8,
     project_sort: String,
     favorite_projects: Vec<PathBuf>,
@@ -259,6 +263,7 @@ impl Default for Preferences {
             project_scan_minutes: 3, reduce_motion: false, compact_sidebar: false, classic_sidebar: false, classic_app_screens: false, light_mode: false, minimize_to_tray: false, start_with_windows: false,
             roots: Vec::new(), default_project_root: None,
             cloud_project_view: ProjectView::List,
+            workspace_project_view: ProjectView::Grid,
             text_scale: 0,
             project_view: ProjectView::List, project_sort: "Recently modified".into(), favorite_projects: Vec::new(), installed: HashMap::new(), scanning: false,
         }
@@ -1200,7 +1205,9 @@ impl Launcher {
                     "Projects",
                     Some(self.projects.len()),
                 );
-                self.side_link(ui, Page::YourApps, "Your apps", Some(self.states.values().filter(|s| s.installed.is_some()).count()));
+                if SHOW_YOUR_APPS {
+                    self.side_link(ui, Page::YourApps, "Your apps", Some(self.states.values().filter(|s| s.installed.is_some()).count()));
+                }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     self.side_link(ui, Page::Cloud, "Cloud", None);
                     self.side_link(ui, Page::Settings, "Settings", None);
@@ -2018,9 +2025,13 @@ impl eframe::App for Launcher {
             ctx.request_repaint_after(Duration::from_millis(16));
             return;
         }
+        if !SHOW_YOUR_APPS {
+            if self.page == Page::YourApps { self.page = Page::Apps; }
+            self.detail_parent = Page::Apps;
+        }
         if self.transitioned_page != self.page {
             if matches!(self.page, Page::App(_)) && !matches!(self.transitioned_page, Page::App(_)) {
-                self.detail_parent = if self.transitioned_page == Page::Apps { Page::Apps } else { Page::YourApps };
+                self.detail_parent = if !SHOW_YOUR_APPS || self.transitioned_page == Page::Apps { Page::Apps } else { Page::YourApps };
             }
             self.transitioned_page = self.page;
             self.page_transition_started = Instant::now();
@@ -2880,9 +2891,9 @@ fn dashboard_metric(ui: &mut egui::Ui, label: &str, value: &str, caption: &str, 
 static LIGHT_THEME: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 fn light_theme() -> bool { LIGHT_THEME.load(std::sync::atomic::Ordering::Relaxed) }
 fn foreground() -> Color32 { if light_theme() { Color32::from_rgb(28, 34, 46) } else { Color32::WHITE } }
-fn ink() -> Color32 { if light_theme() { Color32::from_rgb(245, 246, 249) } else { Color32::from_rgb(18, 19, 22) } }
-fn panel() -> Color32 { if light_theme() { Color32::from_rgb(255, 255, 255) } else { Color32::from_rgb(27, 29, 34) } }
-fn card() -> Color32 { if light_theme() { Color32::from_rgb(235, 238, 244) } else { Color32::from_rgb(34, 36, 42) } }
+fn ink() -> Color32 { if light_theme() { Color32::from_rgb(245, 246, 249) } else { Color32::from_rgb(15, 17, 22) } }
+fn panel() -> Color32 { if light_theme() { Color32::from_rgb(255, 255, 255) } else { Color32::from_rgb(23, 26, 33) } }
+fn card() -> Color32 { if light_theme() { Color32::from_rgb(235, 238, 244) } else { Color32::from_rgb(31, 35, 44) } }
 fn border() -> Color32 { if light_theme() { Color32::from_rgb(212, 218, 229) } else { Color32::from_rgb(46, 48, 56) } }
 fn muted() -> Color32 { if light_theme() { Color32::from_rgb(92, 101, 118) } else { Color32::from_rgb(163, 167, 178) } }
 

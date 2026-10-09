@@ -229,6 +229,180 @@ fn text(ui: &egui::Ui, rect: egui::Rect, value: &str, font: egui::FontId, color:
         );
 }
 
+pub(crate) struct PageBanner {
+    pub rect: egui::Rect,
+    pub actions: egui::Rect,
+    pub art: Option<egui::Rect>,
+}
+
+/// Scalable page symbols, shared by the identity tile and its quiet backdrop.
+fn banner_symbol(p: &egui::Painter, rect: egui::Rect, page: Page, color: Color32) {
+    let point = |x: f32, y: f32| rect.min + rect.size() * Vec2::new(x, y);
+    let stroke = egui::Stroke::new((rect.width() * 0.045).max(1.5), color);
+    let path = |points: &[(f32, f32)], closed: bool| {
+        let points = points.iter().map(|&(x, y)| point(x, y)).collect();
+        p.add(if closed {
+            egui::Shape::closed_line(points, stroke)
+        } else {
+            egui::Shape::line(points, stroke)
+        });
+    };
+    match page {
+        Page::Home => {
+            path(&[(0.08, 0.43), (0.5, 0.09), (0.92, 0.43)], false);
+            path(
+                &[(0.22, 0.35), (0.22, 0.88), (0.78, 0.88), (0.78, 0.35)],
+                false,
+            );
+            path(
+                &[(0.42, 0.88), (0.42, 0.59), (0.59, 0.59), (0.59, 0.88)],
+                false,
+            );
+        }
+        Page::Projects => {
+            path(
+                &[
+                    (0.24, 0.1),
+                    (0.62, 0.1),
+                    (0.81, 0.3),
+                    (0.81, 0.9),
+                    (0.24, 0.9),
+                ],
+                true,
+            );
+            path(&[(0.61, 0.1), (0.61, 0.32), (0.81, 0.32)], false);
+            path(&[(0.36, 0.53), (0.67, 0.53)], false);
+            path(&[(0.36, 0.68), (0.67, 0.68)], false);
+        }
+        Page::Cloud => {
+            let mut points = Vec::new();
+            for [(ax, ay), (bx, by), (cx, cy), (dx, dy)] in [
+                [(0.25, 0.80), (0.01, 0.80), (0.01, 0.44), (0.25, 0.44)],
+                [(0.25, 0.44), (0.23, 0.12), (0.66, 0.08), (0.73, 0.39)],
+                [(0.73, 0.39), (0.99, 0.35), (1.04, 0.80), (0.76, 0.80)],
+            ] {
+                for i in 0..=16 {
+                    let t = i as f32 / 16.0;
+                    let u = 1.0 - t;
+                    points.push(point(
+                        u * u * u * ax
+                            + 3.0 * u * u * t * bx
+                            + 3.0 * u * t * t * cx
+                            + t * t * t * dx,
+                        u * u * u * ay
+                            + 3.0 * u * u * t * by
+                            + 3.0 * u * t * t * cy
+                            + t * t * t * dy,
+                    ));
+                }
+            }
+            p.add(egui::Shape::closed_line(points, stroke));
+        }
+        Page::Settings => {
+            let points = (0..64)
+                .map(|i| {
+                    let angle = i as f32 / 64.0 * std::f32::consts::TAU;
+                    let r = if i % 8 < 4 { 0.42 } else { 0.34 };
+                    point(0.5 + angle.cos() * r, 0.5 + angle.sin() * r)
+                })
+                .collect();
+            p.add(egui::Shape::closed_line(points, stroke));
+            p.circle_stroke(rect.center(), rect.width() * 0.15, stroke);
+        }
+        _ => {
+            for y in [0.16, 0.57] {
+                for x in [0.16, 0.57] {
+                    p.rect_stroke(
+                        egui::Rect::from_min_max(point(x, y), point(x + 0.27, y + 0.27)),
+                        rect.width() * 0.045,
+                        stroke,
+                        egui::StrokeKind::Inside,
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn page_banner(
+    ui: &mut egui::Ui,
+    title: &str,
+    subtitle: &str,
+    page: Page,
+) -> PageBanner {
+    let width = ui.available_width();
+    let wide = width >= 850.0;
+    let accent = match page {
+        Page::Projects => Color32::from_rgb(58, 126, 245),
+        Page::Cloud => Color32::from_rgb(35, 167, 198),
+        _ => ACCENT,
+    };
+    let padding = 24.0;
+    let icon_size = if width >= 600.0 { 80.0 } else { 56.0 };
+    let copy_width =
+        (width - padding * 2.0 - icon_size - 24.0 - if wide { 216.0 } else { 0.0 }).max(100.0);
+    let title = ui.painter().layout(
+        tr(title),
+        font(if width >= 600.0 { 42.0 } else { 30.0 }, true),
+        foreground(),
+        copy_width,
+    );
+    let subtitle = ui
+        .painter()
+        .layout(tr(subtitle), font(14.0, false), muted(), copy_width);
+    let copy_height = title.size().y + 10.0 + subtitle.size().y;
+    let top_height = copy_height.max(icon_size);
+    let height = (padding * 2.0 + top_height + 24.0 + HEIGHT).max(212.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, height), egui::Sense::hover());
+    identity_surface(ui.painter(), rect, accent, false);
+    let icon = egui::Rect::from_center_size(
+        egui::pos2(
+            rect.left() + padding + icon_size * 0.5,
+            rect.top() + padding + top_height * 0.5,
+        ),
+        Vec2::splat(icon_size),
+    );
+    ui.painter()
+        .rect_filled(icon, 18, mix_color(panel(), accent, 0.16));
+    banner_symbol(
+        ui.painter(),
+        icon.shrink(icon_size * 0.24),
+        page,
+        readable_app_color(accent),
+    );
+    let start = egui::pos2(
+        icon.right() + 24.0,
+        rect.top() + padding + (top_height - copy_height) * 0.5,
+    );
+    let subtitle_pos = start + Vec2::new(0.0, title.size().y + 10.0);
+    ui.painter().galley(start, title, foreground());
+    ui.painter().galley(subtitle_pos, subtitle, muted());
+    let art = wide.then(|| {
+        egui::Rect::from_center_size(
+            egui::pos2(rect.right() - 118.0, rect.center().y),
+            Vec2::splat(164.0),
+        )
+    });
+    if let Some(art) = art {
+        if page != Page::Home {
+            banner_symbol(
+                ui.painter(),
+                art.shrink(10.0),
+                page,
+                mix_color(panel(), accent, if light_theme() { 0.13 } else { 0.23 }),
+            );
+        }
+    }
+    let actions = egui::Rect::from_min_max(
+        egui::pos2(rect.left() + padding, rect.bottom() - padding - HEIGHT),
+        egui::pos2(
+            rect.right() - padding - if wide { 216.0 } else { 0.0 },
+            rect.bottom() - padding,
+        ),
+    );
+    PageBanner { rect, actions, art }
+}
+
 pub(crate) fn header(
     ui: &mut egui::Ui,
     title: &str,
@@ -237,55 +411,27 @@ pub(crate) fn header(
     action: &str,
     primary: bool,
 ) -> bool {
-    let action_width = 158.0;
-    let copy_width = (ui.available_width() - 58.0 - action_width - 24.0).max(100.0);
-    let title_galley = ui
+    let banner = page_banner(ui, title, subtitle, page);
+    let width = (ui
         .painter()
-        .layout(tr(title), font(28.0, true), foreground(), copy_width);
-    let subtitle_galley = ui
-        .painter()
-        .layout(tr(subtitle), font(13.0, false), muted(), copy_width);
-    // Center both controls against the complete title/subtitle block, including
-    // wrapped translations and the user's chosen text scale. Bottom page spacing
-    // is excluded from this alignment box.
-    let subtitle_offset = title_galley.size().y + 8.0;
-    let copy_height = subtitle_offset + subtitle_galley.size().y;
-    let content_height = copy_height.max(HEIGHT);
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), content_height + 24.0),
-        egui::Sense::hover(),
-    );
-    let center_y = rect.top() + content_height * 0.5;
-    let icon_rect = egui::Rect::from_center_size(
-        egui::pos2(rect.left() + 20.0, center_y),
-        Vec2::splat(HEIGHT),
-    );
-    ui.painter()
-        .rect_filled(icon_rect, 10.0, mix_color(panel(), ACCENT, 0.08));
-    paint_navigation_icon(
-        ui.painter(),
-        icon_rect.shrink(12.0),
-        page,
-        readable_app_color(ACCENT),
-    );
-    let copy_pos = egui::pos2(rect.left() + 58.0, center_y - copy_height * 0.5);
-    let subtitle_y = copy_pos.y + subtitle_offset;
-    ui.painter().galley(copy_pos, title_galley, foreground());
-    ui.painter()
-        .galley(egui::pos2(copy_pos.x, subtitle_y), subtitle_galley, muted());
-    button(
+        .layout_no_wrap(tr(action), font(13.0, true), foreground())
+        .size()
+        .x
+        + 56.0)
+        .max(158.0)
+        .min(banner.actions.width());
+    let clicked = button(
         ui,
-        egui::Rect::from_center_size(
-            egui::pos2(rect.right() - action_width * 0.5, center_y),
-            Vec2::new(action_width, HEIGHT),
-        ),
+        egui::Rect::from_min_size(banner.actions.min, Vec2::new(width, HEIGHT)),
         "header-action",
         action,
         if primary { Glyph::Plus } else { Glyph::Arrow },
         primary,
         true,
     )
-    .clicked()
+    .clicked();
+    ui.add_space(24.0);
+    clicked
 }
 
 pub(crate) fn standard(ui: &mut egui::Ui, label: &str, primary: bool) -> egui::Response {

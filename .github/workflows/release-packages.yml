@@ -6,9 +6,14 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (for example v3.2.0-beta.1)
+        description: Existing release tag to build (for example v3.3.0-beta.1)
         required: true
         type: string
+      publish:
+        description: Publish the draft after all platform downloads are attached
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -117,9 +122,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
           IS_PRERELEASE: ${{ needs.version.outputs.prerelease }}
+          PUBLISH_RELEASE: ${{ inputs.publish || false }}
         run: |
           if [ "$IS_PRERELEASE" = "true" ]; then
             gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false
           fi
           gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
+          if [ "$PUBLISH_RELEASE" = "true" ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          fi
           echo "Windows EXE, macOS DMG and Linux AppImage/Flatpak downloads attached to release $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

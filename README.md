@@ -1,72 +1,90 @@
 # ArtCraft Master Suite
 
-**Your creative and office apps, projects, and backups in one desktop workspace.**
+Your Craft apps, projects and backups in one desktop workspace.
 
-**Build 3.2 prerelease · `3.2.0-beta.1` · Windows, Linux and macOS**
+**Build 3.3 prerelease · `3.3.0-beta.1` · Windows, Linux and macOS**
 
-[Downloads](https://github.com/ZifuM/Craft-apps-launcher-installer/releases) · [What's new in 3.2](RELEASE_NOTES_3.2.md) · [Build from source](ArtCraftLauncher-Source/README.md)
+[Download Build 3.3](https://github.com/ZifuM/Craft-apps-launcher-installer/releases/tag/v3.3.0-beta.1) · [Release notes](RELEASE_NOTES_3.3.md) · [Build from source](ArtCraftLauncher-Source/README.md)
 
 ## Install
 
-Open **[GitHub Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases)** and choose the package for your system under **Assets**. Build 3.2 is a draft prerelease for review, with all six packages built. It becomes publicly downloadable when published; earlier releases use their original filenames.
+Download the matching file from the release's **Assets**:
 
-| System | Download | Installation |
+| OS | Download | Steps |
 | --- | --- | --- |
-| Windows x64 | `Windows-x86_64.exe` | Run the installer, then launch Master Suite from the Start menu. |
-| Linux Intel/AMD | `Linux-x86_64.AppImage` or `Linux-x86_64.flatpak` | Follow the Linux steps below. |
-| Linux ARM64 | `Linux-aarch64.AppImage` or `Linux-aarch64.flatpak` | Follow the Linux steps below using the ARM64 filename. |
-| macOS Intel / Apple Silicon | `macOS-universal.dmg` | Open the DMG, drag **ArtCraft Master Suite.app** into Applications, then launch it. |
+| Windows x64 | `Windows-x86_64.exe` | Run the installer, then open **ArtCraft Master Suite** from Start. |
+| macOS 12+ — Intel or Apple Silicon | `macOS-universal.dmg` | Open the DMG, drag the app into **Applications**, then launch it. |
+| Linux Intel/AMD | `Linux-x86_64.AppImage` or `Linux-x86_64.flatpak` | Use either option below. |
+| Linux ARM64 | `Linux-aarch64.AppImage` or `Linux-aarch64.flatpak` | Use either option below with the ARM64 filename. |
 
-**Linux:** for AppImage, enable **Allow executing as a program** in file properties, then open it. For Flatpak, install Flatpak first and run `flatpak install --user ./Linux-x86_64.flatpak` from your download folder. The first installation may download its runtime. [Linux details](docs/LINUX.md)
+**Linux AppImage:** in file Properties, allow execution, then open it. Or run:
 
-**macOS:** requires macOS 12+. This beta is not notarized; macOS may require approval in **System Settings → Privacy & Security**. [Mac details](docs/MACOS.md)
+```sh
+chmod +x Linux-x86_64.AppImage
+./Linux-x86_64.AppImage
+```
 
-**First launch:** choose your language and project folder, install tools through **App Manager**, then add existing work through **Projects → Add folder**. Apps download separately. Your original project files stay in their folders.
+**Linux Flatpak:** with Flatpak and Flathub set up, run:
 
-For future beta updates, enable **Settings → Updates → Allow prerelease updates**. Older suite versions may need a one-time manual upgrade to recognize the new filenames. Release assets include `SHA256SUMS.txt` for download integrity checks.
+```sh
+flatpak install --user ./Linux-x86_64.flatpak
+flatpak run io.github.ZifuM.ArtCraftMasterSuite
+```
 
-## Explore
+**macOS:** this prerelease is not notarized. If macOS blocks opening it, use **System Settings → Privacy & Security → Open Anyway** for the downloaded app.
 
-### Home
+**First launch:** choose your language and project folder. Install apps through **App Manager** and add existing folders through **Projects → Add folder**. Apps download separately. Enable **Settings → Updates → Allow prerelease updates** for future betas.
 
-Launch your tools, return to recent projects, and see your workspace at a glance.
+## Main features
 
-![Home with quick-launch apps and recent projects](docs/screenshots/home.png)
+- **Home:** quick launch, recent projects and update counts.
+- **App Manager:** install, update and manage 12 Craft apps.
+- **Projects:** search, filters, previews, favorites and List/Grid/Waterfall views.
+- **Workspaces:** app information, direct sidebar access and an app-specific project library.
+- **Cloud:** versioned backups, restore, dates and status for your own sync folders.
+- **Settings:** languages, text sizes, themes and navigation preferences.
 
-### Your apps
+## Screenshots
 
-Search installed tools and open their workspaces. Three-dot menus contain shortcuts, update checks, Properties and uninstall actions.
+<details>
+<summary>Home — quick launch and recent projects</summary>
 
-![Your apps with compact creative and productivity cards](docs/screenshots/your-apps.png)
+![Home](docs/screenshots/home.png)
 
-### Projects
+</details>
 
-Browse saved previews in List, Grid or Waterfall view. Search, favorite, rename, open or reveal files through their context menus.
+<details>
+<summary>Projects — search, filters and file previews</summary>
 
-![Projects library with search, filters and view controls](docs/screenshots/projects.png)
+![Projects](docs/screenshots/projects.png)
 
-### App Manager
+</details>
 
-Discover, install and update all 12 Craft apps, with links to official resources and the community.
+<details>
+<summary>App Manager — discover, install and update apps</summary>
 
-![App Manager with compact app cards and community links](docs/screenshots/app-manager.png)
+![App Manager](docs/screenshots/app-manager.png)
 
-### Cloud
+</details>
 
-Save versioned backups to Google Drive, Dropbox or OneDrive sync folders. See backup dates and status, and restore saved versions. Upload confirmation depends on the provider and platform; a local copy alone does not confirm cloud upload.
+<details>
+<summary>Cloud — versioned backups and status</summary>
 
-![Cloud with file backup status, dates and backup controls](docs/screenshots/cloud.png)
+![Cloud](docs/screenshots/cloud.png)
 
-### Settings
+</details>
 
-Choose your language, text size, theme, navigation style, project layout and update preferences.
+<details>
+<summary>Workspaces — app details and project libraries</summary>
 
-![Settings with language, text size, theme and navigation options](docs/screenshots/settings.png)
+![PhotoCraft workspace](docs/screenshots/workspace.png)
 
-*Screenshots show the Windows interface with example apps and projects. Linux and macOS share the design, with native platform integrations.*
+</details>
 
-## More information
+*Screenshots show the Windows interface with example projects. All three platforms share the design.*
 
-[Cloud setup](docs/CLOUD_SETUP.md) · [Plugins and workspace folders](docs/PLUGIN_MANAGEMENT.md) · [Release notes](RELEASE_NOTES_3.2.md) · [MIT license](ArtCraftLauncher-Source/LICENSE)
+Cloud and plugin integration are experimental; Assets is a placeholder. A copy to a sync folder does not confirm cloud upload—your provider's client handles syncing.
 
-Cloud and plugin integration remain experimental; asset management is a placeholder. This is an independent community project for Storytold's ArtCraft apps. Third-party names and artwork retain their respective rights.
+[Linux details](docs/LINUX.md) · [macOS details](docs/MACOS.md) · [Cloud setup](docs/CLOUD_SETUP.md) · [License](ArtCraftLauncher-Source/LICENSE)
+
+Independent community launcher for Storytold's ArtCraft apps. App names and artwork belong to their respective owners.
