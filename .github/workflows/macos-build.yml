@@ -1,0 +1,30 @@
+name: macOS package
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build universal Mac app and DMG
+        run: bash packaging/macos/build-dmg.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArtCraftMasterSuite-macOS-universal
+          if-no-files-found: error
+          path: |
+            dist/macos/*.dmg
+            dist/macos/*.sha256

@@ -5,42 +5,48 @@ pub fn flatpak() -> bool { cfg!(target_os="linux") && std::env::var_os("FLATPAK_
 pub fn label() -> String { format!("{} / {}",std::env::consts::OS,std::env::consts::ARCH) }
 pub fn home() -> Option<PathBuf> { std::env::var_os(if cfg!(windows){"USERPROFILE"}else{"HOME"}).map(PathBuf::from) }
 pub fn data_dir() -> Option<PathBuf> {
+ #[cfg(target_os="macos")] {return home().map(|p|p.join("Library/Application Support/ArtCraft Master Suite"));}
  #[cfg(windows)] { return std::env::var_os("LOCALAPPDATA").or_else(||std::env::var_os("APPDATA")).map(PathBuf::from).map(|p|p.join("ArtCraftLauncher")); }
- #[cfg(not(windows))] { std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p|p.is_absolute()).or_else(||home().map(|p|p.join(".local/share"))).map(|p|p.join("artcraft-master-suite")) }
+ #[cfg(not(any(windows,target_os="macos")))] { std::env::var_os("XDG_DATA_HOME").map(PathBuf::from).filter(|p|p.is_absolute()).or_else(||home().map(|p|p.join(".local/share"))).map(|p|p.join("artcraft-master-suite")) }
 }
 pub fn config_root() -> Option<PathBuf> {
+ #[cfg(target_os="macos")] {return home().map(|p|p.join("Library/Application Support"));}
  #[cfg(windows)] { return std::env::var_os("APPDATA").map(PathBuf::from); }
- #[cfg(not(windows))] {
+ #[cfg(not(any(windows,target_os="macos")))] {
   std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).filter(|p|p.is_absolute()).or_else(||home().map(|p|p.join(".config")))
  }
 }
 pub fn install_dir(id:&str)->Option<PathBuf> {
+ #[cfg(target_os="macos")] {return home().map(|p|p.join("Applications/ArtCraft Apps").join(id));}
  #[cfg(windows)] {return std::env::var_os("LOCALAPPDATA").map(PathBuf::from).map(|p|p.join("Programs/ArtCraft Apps").join(id));}
- #[cfg(not(windows))] {data_dir().map(|p|p.join("apps").join(id))}
+ #[cfg(not(any(windows,target_os="macos")))] {data_dir().map(|p|p.join("apps").join(id))}
 }
 pub fn package_name(slug:&str,version:&str)->Result<String,String>{
  let suffix=match (std::env::consts::OS,std::env::consts::ARCH){
   ("windows","x86_64")=>"windows-x64-portable.zip",("windows","aarch64")=>"windows-arm64-portable.zip",("windows","x86")=>"windows-x86-portable.zip",
+  ("macos","x86_64"|"aarch64")=>"macos-universal.dmg",
   ("linux","x86_64")=>"linux-x86_64.AppImage",("linux","aarch64")=>"linux-aarch64.AppImage",
   _=>return Err(format!("No supported package target for {}",label())),
  };Ok(format!("{slug}-{version}-{suffix}"))
 }
 pub fn executable(root:&Path,id:&str)->Option<PathBuf>{
+ #[cfg(target_os="macos")] {let _=id;return crate::macos::find_executable(root);}
  #[cfg(target_os="linux")] { let path=root.join(format!("{}.AppImage",release_slug(id)));return path.is_file().then_some(path); }
- #[cfg(not(target_os="linux"))] {
+ #[cfg(not(any(target_os="linux",target_os="macos")))] {
   for name in [format!("{}.exe",release_slug(id)),format!("{id}.exe")] {
    if let Some(entry)=WalkDir::new(root).max_depth(4).into_iter().filter_map(Result::ok).find(|e|e.file_type().is_file()&&e.file_name().to_string_lossy().eq_ignore_ascii_case(&name)){return Some(entry.into_path());}
   }None
  }
 }
 pub fn unpack(bytes:&[u8],directory:&Path,id:&str)->Result<(),String>{
+ #[cfg(target_os="macos")] {let _=id;return crate::macos::unpack(bytes,directory);}
  #[cfg(target_os="linux")] {
   use std::os::unix::fs::PermissionsExt;
   validate_appimage(bytes)?;
   let path=directory.join(format!("{}.AppImage",release_slug(id)));fs::write(&path,bytes).map_err(|e|e.to_string())?;
   fs::set_permissions(path,fs::Permissions::from_mode(0o755)).map_err(|e|e.to_string())?;return Ok(());
  }
- #[cfg(not(target_os="linux"))] {
+ #[cfg(not(any(target_os="linux",target_os="macos")))] {
   let _=id;let mut zip=zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e|e.to_string())?;let mut expanded=0u64;
   if zip.len()>100000{return Err("Package contains too many files".into());}
   for index in 0..zip.len(){
@@ -76,4 +82,8 @@ pub fn spawn(command:&mut Command)->std::io::Result<std::process::Child>{
   if std::env::var_os("APPIMAGE").is_some(){for key in ["LD_LIBRARY_PATH","LD_PRELOAD","APPDIR","APPIMAGE","OWD"]{command.env_remove(key);}}
  }
  command.spawn()
+}
+
+pub fn reveal_label() -> &'static str {
+ if cfg!(target_os="macos") { "Show in Finder" } else if cfg!(target_os="windows") { "Show in File Explorer" } else { "Show in file manager" }
 }

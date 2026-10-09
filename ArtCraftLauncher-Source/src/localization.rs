@@ -75,5 +75,9 @@ pub fn install_fonts(ctx: &egui::Context) {
     for (name,candidates) in [("noto-cjk",["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc","/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"])] {
         for path in candidates {if let Ok(bytes)=std::fs::read(path){fonts.font_data.insert(name.into(),egui::FontData::from_owned(bytes).into());fonts.families.entry(egui::FontFamily::Proportional).or_default().push(name.into());break;}}
     }
+    #[cfg(target_os="macos")]
+    for (name,path) in [("mac-chinese","/System/Library/Fonts/PingFang.ttc"),("mac-japanese","/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"),("mac-korean","/System/Library/Fonts/AppleSDGothicNeo.ttc")] {
+        if let Ok(bytes)=std::fs::read(path){fonts.font_data.insert(name.into(),egui::FontData::from_owned(bytes).into());fonts.families.entry(egui::FontFamily::Proportional).or_default().push(name.into());}
+    }
     ctx.set_fonts(fonts);
 }

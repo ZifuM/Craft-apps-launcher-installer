@@ -2,7 +2,7 @@
 
 **Your creative and productivity apps, projects, and updates in one workspace.**
 
-**BETA · Build 3.0**
+**BETA · Build 3.1 development**
 
 ArtCraft Master Suite is a native desktop install manager for Storytold’s ArtCraft apps. Discover tools, launch your installed apps, and pick up your saved projects from one place.
 
@@ -19,9 +19,9 @@ Get installable files from **[GitHub Releases](https://github.com/ZifuM/Craft-ap
 | Windows x64 | `ArtCraftMasterSuite-Setup.exe` |
 | Linux Intel/AMD 64-bit | `ArtCraftMasterSuite-Linux-x86_64.AppImage` or `ArtCraftMasterSuite-Linux-x86_64.flatpak` |
 | Linux ARM64 | `ArtCraftMasterSuite-Linux-aarch64.AppImage` or `ArtCraftMasterSuite-Linux-aarch64.flatpak` |
-| macOS | Not available yet |
+| macOS Intel / Apple Silicon | `ArtCraftMasterSuite-macOS-universal.dmg` (Build 3.1 beta; see [macOS notes](docs/MACOS.md)) |
 
-**Build 3.0 packaging status:** the Windows installer and both Linux package formats have built successfully on GitHub and are attached to the Build 3.0 draft release. They become public when that draft is published. Linux desktop behavior still needs hands-on validation. The older installer stored in this repository is Build 2.2; use release assets for new versions.
+**Build 3.0 packaging status:** the Windows installer and both Linux package formats have built successfully on GitHub and are attached to the Build 3.0 release. Build 3.0 is published; Build 3.1 adds macOS and is being prepared separately. Linux desktop behavior still needs hands-on validation. The older installer stored in this repository is Build 2.2; use release assets for new versions.
 
 For AppImage, allow the downloaded file to run as a program, then open it. For Flatpak, install the downloaded `.flatpak` with your software manager or `flatpak install --user ./ArtCraftMasterSuite-Linux-x86_64.flatpak` (use the ARM64 filename on ARM64). Flatpak must be installed, and initial installation may download its runtime.
 

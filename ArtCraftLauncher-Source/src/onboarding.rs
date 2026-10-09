@@ -144,6 +144,8 @@ impl Launcher {
                 self.onboarding_step = 2;
                 return;
             }
+            #[cfg(target_os="macos")]
+            if let Err(error)=macos::set_startup(self.prefs.start_with_windows){self.onboarding_error=Some(error);self.onboarding_step=2;return;}
             #[cfg(target_os="linux")]
             if let Err(error)=linux_tray::set_startup(self.prefs.start_with_windows){self.onboarding_error=Some(error);self.onboarding_step=2;return;}
             self.prefs.onboarding_complete = true;

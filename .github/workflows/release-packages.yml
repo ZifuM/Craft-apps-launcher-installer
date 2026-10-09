@@ -71,8 +71,14 @@ jobs:
           if-no-files-found: error
           path: dist/windows/ArtCraftMasterSuite-Setup.exe
 
+  macos:
+    needs: version
+    uses: ./.github/workflows/macos-build.yml
+    with:
+      ref: ${{ needs.version.outputs.tag }}
+
   publish:
-    needs: [version, linux, windows]
+    needs: [version, linux, windows, macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -88,7 +94,7 @@ jobs:
           source = pathlib.Path('packages')
           destination = pathlib.Path('release')
           destination.mkdir()
-          names = ['ArtCraftMasterSuite-Setup.exe'] + [
+          names = ['ArtCraftMasterSuite-Setup.exe', 'ArtCraftMasterSuite-macOS-universal.dmg'] + [
               f'ArtCraftMasterSuite-Linux-{arch}.{suffix}'
               for arch in ('x86_64', 'aarch64') for suffix in ('AppImage', 'flatpak')
           ]
@@ -110,4 +116,4 @@ jobs:
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
         run: |
           gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
-          echo "Windows EXE and Linux AppImage/Flatpak downloads attached to release $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"
+          echo "Windows EXE, macOS DMG and Linux AppImage/Flatpak downloads attached to release $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

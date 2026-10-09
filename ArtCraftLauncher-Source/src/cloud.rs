@@ -15,7 +15,12 @@ impl Provider {
    let binary=match self {Self::Dropbox=>"dropbox",Self::Google=>return Err("Google Drive has no official Linux desktop client. Select a folder synced by your chosen Linux sync tool.".into()),Self::OneDrive=>return Err("OneDrive has no official Linux desktop client. Select a folder synced by your chosen Linux sync tool.".into())};
    platform::spawn(Command::new(binary).arg("start")).map_err(|e|format!("Could not open Dropbox: {e}"))?;return Ok(());
   }
-  #[cfg(not(target_os="linux"))] {
+  #[cfg(target_os="macos")] {
+   let name=match self{Self::Google=>"Google Drive",Self::Dropbox=>"Dropbox",Self::OneDrive=>"OneDrive"};
+   let status=Command::new("/usr/bin/open").args(["-a",name]).status().map_err(|e|e.to_string())?;
+   return if status.success(){Ok(())}else{Err(format!("Could not open {name}. Install its macOS desktop app first."))};
+  }
+  #[cfg(not(any(target_os="linux",target_os="macos")))] {
 
   let mut candidates = Vec::new();
   for variable in ["LOCALAPPDATA", "ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"] {

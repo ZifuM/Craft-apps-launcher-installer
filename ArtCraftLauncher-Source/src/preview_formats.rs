@@ -163,6 +163,8 @@ pub fn load(path:&Path,ext:&str)->Option<Preview>{
     if result.is_some(){return result;}
     #[cfg(target_os="linux")]
     if matches!(ext,"pdf"|"ai"){if let Some(image)=linux_pdf(path){return Some((image,"First page preview"));}}
+    #[cfg(target_os="macos")]
+    if let Some(image)=mac_thumbnail(path){return Some((image,"macOS document preview"));}
     #[cfg(target_os="windows")]
     {
         if matches!(ext,"pdf"|"ai") {if let Some(im)=crate::preview_windows::pdf(path){return Some((im,"First page preview"));}}
@@ -201,4 +203,20 @@ fn dxf(path:&Path)->Option<Preview>{
     let w=(bounds[2]-bounds[0]).max(1.0);let h=(bounds[3]-bounds[1]).max(1.0);let pad=w.max(h)*0.04;
     let xml=format!(r##"<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="{} {} {} {}"><rect x="{}" y="{}" width="{}" height="{}" fill="#fafbfd"/><g transform="translate(0,{}) scale(1,-1)" fill="none" stroke="#26627b" stroke-width="{}">{}</g></svg>"##,bounds[0]-pad,bounds[1]-pad,w+2.0*pad,h+2.0*pad,bounds[0]-pad,bounds[1]-pad,w+2.0*pad,h+2.0*pad,bounds[1]+bounds[3],w.max(h)/450.0,shapes.join(""));
     Some((svg(xml.as_bytes())?,"2D drawing preview"))
+}
+
+#[cfg(target_os="macos")]
+fn mac_thumbnail(path:&Path)->Option<RgbaImage>{
+    use std::{fs,process::{Command,Stdio},time::{Instant,Duration}};
+    let root=crate::platform::data_dir()?.join("preview-work");fs::create_dir_all(&root).ok()?;
+    let directory=root.join(format!("quicklook-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos()));
+    fs::create_dir(&directory).ok()?;
+    let result=(||{
+        let mut child=Command::new("/usr/bin/qlmanage").args(["-t","-s","640","-o"]).arg(&directory).arg(path).stdout(Stdio::null()).stderr(Stdio::null()).spawn().ok()?;
+        let started=Instant::now();
+        loop{if let Some(status)=child.try_wait().ok()?{if !status.success(){return None;}break;}if started.elapsed()>Duration::from_secs(10){let _=child.kill();let _=child.wait();return None;}std::thread::sleep(Duration::from_millis(25));}
+        let preview=fs::read_dir(&directory).ok()?.flatten().map(|e|e.path()).find(|p|p.extension().is_some_and(|e|e=="png"))?;
+        raster(&read(&preview)?)
+    })();
+    let _=fs::remove_dir_all(&directory);result
 }

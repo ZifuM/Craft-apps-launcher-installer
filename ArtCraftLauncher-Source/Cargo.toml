@@ -1,6 +1,6 @@
 [package]
 name = "artcraft-launcher"
-version = "3.0.0"
+version = "3.1.0"
 edition = "2024"
 description = "A native desktop hub for the ArtCraft creative apps"
 license = "MIT"
@@ -49,3 +49,6 @@ ksni = { version = "0.3.6", features = ["blocking"] }
 ksni = { path = "vendor/ksni-0.3.6" }
 pastey = { path = "vendor/pastey-0.2.3" }
 tokio-macros = { path = "vendor/tokio-macros-2.7.2" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+tray-icon = { version = "0.26.1", default-features = false }

@@ -18,6 +18,8 @@ mod cloud;
 mod platform;
 #[cfg(target_os="linux")]
 mod linux_tray;
+#[cfg(target_os="macos")]
+mod macos;
 use localization::tr;
 mod preview_formats;
 #[cfg(target_os = "windows")]
@@ -212,6 +214,7 @@ struct Preferences {
     language: String,
     automatic_updates: bool,
     automatic_suite_updates: bool,
+    beta_suite_updates: bool,
     update_interval_hours: u64,
     update_notifications: bool,
     automatic_project_scan: bool,
@@ -240,7 +243,7 @@ impl Default for Preferences {
         Self {
             onboarding_complete: false,
             language: "en".into(),
-            automatic_updates: true, automatic_suite_updates: true, update_interval_hours: 4,
+            automatic_updates: true, automatic_suite_updates: true, beta_suite_updates: true, update_interval_hours: 4,
             update_notifications: true, automatic_project_scan: true,
             project_scan_minutes: 3, reduce_motion: false, compact_sidebar: false, classic_sidebar: false, classic_app_screens: false, light_mode: false, minimize_to_tray: false, start_with_windows: false,
             roots: Vec::new(), default_project_root: None,
@@ -323,6 +326,8 @@ struct Launcher {
     tray: Option<windows_tray::Tray>,
     #[cfg(target_os="linux")]
     linux_tray: Option<linux_tray::Tray>,
+    #[cfg(target_os="macos")]
+    mac_tray: Option<macos::Tray>,
     tray_failed: bool,
     silent_start: bool,
     tray_open_requested: bool,
@@ -456,6 +461,8 @@ impl Launcher {
             tray: None,
             #[cfg(target_os="linux")]
             linux_tray: None,
+            #[cfg(target_os="macos")]
+            mac_tray: None,
             tray_failed: false,
             silent_start: prefs.start_with_windows && std::env::args().any(|arg| arg == "--tray"),
             tray_open_requested: false,
@@ -524,11 +531,12 @@ impl Launcher {
         if self.suite_update_busy || self.suite_update_ready.is_some() { return; }
         if !manual && self.suite_check_started.is_some_and(|at| at.elapsed() < Duration::from_secs(4 * 60 * 60)) { return; }
         self.suite_check_started = Some(Instant::now());
+        let include_beta = self.prefs.beta_suite_updates;
         self.suite_update_busy = true;
         self.suite_update_status = if platform::flatpak(){"Checking the Flatpak update source..."}else{"Checking GitHub releases..."}.into();
         let tx = self.events_tx.clone();
         thread::spawn(move || {
-            let result = suite_update::prepare(VERSION, |message| { let _ = tx.send(Event::SuiteUpdateProgress(message)); });
+            let result = suite_update::prepare(VERSION, include_beta, |message| { let _ = tx.send(Event::SuiteUpdateProgress(message)); });
             let _ = tx.send(Event::SuiteUpdateReady(result));
         });
     }
@@ -1951,7 +1959,7 @@ impl Launcher {
     fn project_context_menu(&mut self, response: &egui::Response, project: &Project) {
         response.context_menu(|ui| {
             if ui.button(if self.prefs.favorite_projects.contains(&project.path) { "Remove from favorites" } else { "Add to favorites" }).clicked() { self.toggle_project_favorite(&project.path); ui.close_menu(); }
-            if ui.button(tr("Show in File Explorer")).clicked() { reveal_project_path(&project.path, true); ui.close_menu(); }
+            if ui.button(tr(platform::reveal_label())).clicked() { reveal_project_path(&project.path, true); ui.close_menu(); }
             if ui.button(tr("Copy file path")).clicked() { ui.ctx().copy_text(project.path.display().to_string()); ui.close_menu(); }
         });
     }
@@ -2146,7 +2154,7 @@ impl Launcher {
         if icon_button_sized(&mut actions, ButtonIcon::Rename, "Rename project", muted(), 28.0).clicked() {
             self.show_project_rename = Some(ProjectRename { focused: false, path: project.path.clone(), name: project.path.file_stem().unwrap_or_default().to_string_lossy().into_owned() });
         }
-        if icon_button_sized(&mut actions, ButtonIcon::Folder, "Show in File Explorer", muted(), 28.0).clicked() { reveal_project_path(&project.path, true); }
+        if icon_button_sized(&mut actions, ButtonIcon::Folder, platform::reveal_label(), muted(), 28.0).clicked() { reveal_project_path(&project.path, true); }
         let favorite = self.prefs.favorite_projects.contains(&project.path);
         self.project_cloud_badge(&mut actions, project);
         if icon_button_sized(&mut actions, ButtonIcon::Favorite, if favorite { "Remove from favorites" } else { "Add to favorites" }, if favorite { ACCENT } else { muted() }, 28.0).clicked() { self.toggle_project_favorite(&project.path); }
@@ -2218,7 +2226,7 @@ impl Launcher {
                     let open = secondary_button(ui, &format!("Open in {}", project.app.name));
                     if open.clicked() { self.launch(*project.app, Some(&project.path)); }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if icon_button(ui, ButtonIcon::Folder, "Show in File Explorer", muted()).clicked() { reveal_project_path(&project.path, true); }
+                        if icon_button(ui, ButtonIcon::Folder, platform::reveal_label(), muted()).clicked() { reveal_project_path(&project.path, true); }
                         if icon_button(ui, ButtonIcon::Delete, "Delete project", theme_rgb(213,103,111)).clicked() { self.show_project_delete = Some(project.clone()); }
                         if icon_button(ui, ButtonIcon::Rename, "Rename project", muted()).clicked() {
                             self.show_project_rename = Some(ProjectRename { focused: false, path: project.path.clone(), name: project.path.file_stem().unwrap_or_default().to_string_lossy().into_owned() });
@@ -2287,6 +2295,11 @@ impl Launcher {
         if self.settings_tab == 1 {
         settings_section(ui, "Master Suite updates", "Keep this manager up to date from its official GitHub releases.", |ui| {
             setting_toggle(ui, "Update Master Suite automatically", "Check at startup and every 4 hours. Download verified updates and restart when idle.", &mut self.prefs.automatic_suite_updates);
+            let previous_beta=self.prefs.beta_suite_updates;
+            ui.add_enabled_ui(!self.suite_update_busy && !platform::flatpak(), |ui| {
+                setting_toggle(ui, "Include beta suite updates", "Receive published beta builds for your operating system. Disable for stable releases only.", &mut self.prefs.beta_suite_updates);
+            });
+            if previous_beta!=self.prefs.beta_suite_updates{self.suite_update_ready=None;self.suite_check_started=None;self.suite_update_status="Update channel changed. Check for updates to refresh.".into();}
             ui.label(RichText::new(tr(format!("Installed version: {VERSION}"))).size(12.0).color(muted()));
             ui.label(RichText::new(tr(&self.suite_update_status)).size(12.0).color(muted()));
             ui.horizontal(|ui| {
@@ -2404,6 +2417,8 @@ impl Launcher {
                     self.toast = Some(error);
                 }
             }
+            #[cfg(target_os="macos")]
+            if previous_startup!=self.prefs.start_with_windows{if let Err(error)=macos::set_startup(self.prefs.start_with_windows){self.prefs.start_with_windows=previous_startup;self.toast=Some(error);}}
             #[cfg(target_os="linux")]
             if previous_startup!=self.prefs.start_with_windows{if let Err(error)=linux_tray::set_startup(self.prefs.start_with_windows){self.prefs.start_with_windows=previous_startup;self.toast=Some(error);}}
             self.sidebar_collapsed = self.prefs.compact_sidebar;
@@ -2459,6 +2474,19 @@ impl eframe::App for Launcher {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.linux_tray.is_none()));
             }
             if self.prefs.minimize_to_tray&&self.linux_tray.is_some()&&ctx.input(|i|i.viewport().minimized==Some(true)){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));}
+        }
+        #[cfg(target_os="macos")]
+        {
+            let needed=self.prefs.minimize_to_tray||self.prefs.start_with_windows;
+            if needed&&self.mac_tray.is_none()&&!self.tray_failed{match macos::Tray::new(self.events_tx.clone(),ctx.clone()){Ok(tray)=>self.mac_tray=Some(tray),Err(error)=>{self.tray_failed=true;self.toast=Some(error);}}}
+            if !needed&&self.mac_tray.take().is_some(){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));}
+            if self.silent_start{
+                self.silent_start=false;self.startup_splash_finished=true;self.startup_splash_initialized=true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(1240.0,800.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(920.0,640.0)));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.mac_tray.is_none()));
+            }
+            if self.prefs.minimize_to_tray&&self.mac_tray.is_some()&&ctx.input(|i|i.viewport().minimized==Some(true)){ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));}
         }
         if !self.window_rounding_applied {
             #[cfg(target_os = "windows")]
@@ -3294,6 +3322,8 @@ fn format_file_size(bytes: u64) -> String {
 }
 
 fn open_url(url: &str) {
+    #[cfg(target_os="macos")]
+    { let _=Command::new("/usr/bin/open").arg(url).spawn(); }
     #[cfg(target_os = "windows")]
     {
         let _ = Command::new("rundll32.exe")
@@ -3541,6 +3571,8 @@ fn readable_app_color(color: Color32) -> Color32 {
 }
 
 fn reveal_project_path(path: &Path, select: bool) {
+    #[cfg(target_os="macos")]
+    { let mut command=Command::new("/usr/bin/open");if select{command.arg("-R");}let _=command.arg(path).spawn(); }
     #[cfg(target_os="linux")]
     { let folder=if select { path.parent().unwrap_or(path) } else { path }; let _=platform::spawn(Command::new("xdg-open").arg(folder)); }
     #[cfg(target_os = "windows")]

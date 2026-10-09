@@ -1,6 +1,6 @@
 # Publishing installable downloads
 
-The **Release downloads** GitHub Actions workflow builds the suite on Windows and Linux and attaches the actual files to GitHub Releases. No WSL or local Linux installation is needed. It uses GitHub's built-in token; no personal access token needs to be saved in the repository.
+The **Release downloads** GitHub Actions workflow builds the suite on Windows, Linux and macOS and attaches the actual files to GitHub Releases. No WSL or local Linux installation is needed. It uses GitHub's built-in token; no personal access token needs to be saved in the repository.
 
 ## Build 3.0
 
@@ -14,7 +14,8 @@ The **Release downloads** GitHub Actions workflow builds the suite on Windows an
    - `ArtCraftMasterSuite-Linux-x86_64.flatpak` — Intel/AMD Linux.
    - `ArtCraftMasterSuite-Linux-aarch64.AppImage` — ARM64 Linux.
    - `ArtCraftMasterSuite-Linux-aarch64.flatpak` — ARM64 Linux.
-   - `SHA256SUMS.txt` — combined checksums for all five packages.
+   - `ArtCraftMasterSuite-macOS-universal.dmg` — Intel and Apple Silicon Macs (Build 3.1 onward).
+   - `SHA256SUMS.txt` — combined checksums for the installer packages.
 
 For a release that already exists, use **Actions → Release downloads → Run workflow**, select the updated default branch and enter its release tag. This also works with an existing draft release, allowing package review before publishing. The tag must point to the intended source and match Cargo.toml (`3.0.0` or `v3.0.0`). Do not reuse an old release tag for new source.
 
@@ -27,3 +28,7 @@ Update the package version in Cargo.toml and Cargo.lock, commit the changes, and
 Keep the asset filenames unchanged: the suite updater selects the exact platform and architecture filename and uses the release checksums. Flatpak bundles install directly, but automatic Flatpak updates additionally require a hosted Flatpak repository configured as the installation's origin; GitHub bundle uploads alone do not provide that service.
 
 Build completion does not establish desktop compatibility. Linux installation, launching, tray integration and updating still require native validation before describing the Linux release as verified. Windows signing is not configured by this workflow.
+
+## Build 3.1 macOS
+
+Use tag `v3.1.0` and `RELEASE_NOTES_3.1.md` for the next release. The new release workflow also builds the universal DMG on a Mac runner. The `.app` is ad-hoc signed, not Developer ID signed or notarized. Keep this release a draft until the packages are available for review. The already published Build 3.0 files remain unchanged.

@@ -22,22 +22,25 @@ fn hash_file(path:&std::path::Path)->Result<String,String>{
     let mut file=fs::File::open(path).map_err(|e|e.to_string())?;let mut hash=Sha256::new();let mut buf=[0;64*1024];
     loop{let n=file.read(&mut buf).map_err(|e|e.to_string())?;if n==0{break;}hash.update(&buf[..n]);}Ok(format!("{:x}",hash.finalize()))
 }
-pub fn prepare(current:&str, mut progress:impl FnMut(String))->Result<Option<Prepared>,String>{
+pub fn prepare(current:&str, include_beta:bool, mut progress:impl FnMut(String))->Result<Option<Prepared>,String>{
     #[cfg(target_os="linux")]
     if crate::platform::flatpak(){return prepare_flatpak(progress);}
     let client=Client::builder().user_agent("ArtCraft-Master-Suite-Updater").https_only(true).connect_timeout(Duration::from_secs(15)).timeout(Duration::from_secs(300)).build().map_err(|e|e.to_string())?;
-    let response=client.get(format!("https://api.github.com/repos/{REPO}/releases/latest")).send().map_err(|e|format!("Could not check GitHub: {e}"))?;
+    let response=client.get(format!("https://api.github.com/repos/{REPO}/releases?per_page=100")).send().map_err(|e|format!("Could not check GitHub: {e}"))?;
     if response.status()==reqwest::StatusCode::NOT_FOUND{return Ok(None);}
-    let release:Release=response.error_for_status().map_err(|e|e.to_string())?.json().map_err(|e|e.to_string())?;
-    if release.draft||release.prerelease{return Ok(None);}
-    let latest=version(&release.tag_name).ok_or("Release tag must use a stable version such as v2.3.0")?;
-    if latest<=version(current).ok_or("Installed version is invalid")?{return Ok(None);}
+    let mut releases:Vec<Release>=response.error_for_status().map_err(|e|e.to_string())?.json().map_err(|e|e.to_string())?;
+    let installed=version(current).ok_or("Installed version is invalid")?;
     let names:Vec<String>=match (std::env::consts::OS,std::env::consts::ARCH) {
         ("windows","x86_64")=>vec!["ArtCraftMasterSuite-Setup.exe".into(),"ArtCraftMasterSuite-Windows-x64.zip".into(),"Windows-64bit.Installer.zip".into()],
+        ("macos","x86_64"|"aarch64")=>vec!["ArtCraftMasterSuite-macOS-universal.dmg".into()],
         ("linux",arch @ ("x86_64"|"aarch64"))=>vec![format!("ArtCraftMasterSuite-Linux-{arch}.AppImage")],
         _=>return Err(format!("Suite updates are not available for {}",crate::platform::label())),
     };
-    let asset=names.iter().find_map(|name|release.assets.iter().find(|a|&a.name==name)).ok_or_else(||format!("This release has no suite update for {}. The current installation was kept.",crate::platform::label()))?;
+    releases.retain(|r| !r.draft && (include_beta || !r.prerelease) && version(&r.tag_name).is_some_and(|v|v>installed));
+    releases.sort_by_key(|r|std::cmp::Reverse(version(&r.tag_name)));
+    let Some(release)=releases.into_iter().find(|r|names.iter().any(|name|r.assets.iter().any(|a|&a.name==name))) else{return Ok(None);};
+    let latest=version(&release.tag_name).ok_or("Release version is invalid")?;
+    let asset=names.iter().find_map(|name|release.assets.iter().find(|a|&a.name==name)).ok_or("Compatible release asset disappeared")?;
     if !approved_url(&asset.browser_download_url)||asset.size==0||asset.size>MAX_DOWNLOAD{return Err("Invalid update download".into());}
     let expected=if let Some(hash)=asset.digest.as_deref().and_then(|s|s.strip_prefix("sha256:")).filter(|s|valid_hash(s)){hash.to_lowercase()}
     else {
@@ -57,7 +60,7 @@ pub fn prepare(current:&str, mut progress:impl FnMut(String))->Result<Option<Pre
         loop{let n=response.read(&mut buf).map_err(|e|e.to_string())?;if n==0{break;}total+=n as u64;if total>asset.size||total>MAX_DOWNLOAD{return Err("Update exceeds its declared size".into());}output.write_all(&buf[..n]).map_err(|e|e.to_string())?;hash.update(&buf[..n]);}
         output.sync_all().map_err(|e|e.to_string())?;drop(output);
         if total!=asset.size||format!("{:x}",hash.finalize())!=expected{return Err("Update checksum did not match. Nothing was installed.".into());}
-        let installer=folder.join(if cfg!(target_os="linux"){asset.name.as_str()}else{"ArtCraftMasterSuite-Setup.exe"});
+        let installer=folder.join(if cfg!(any(target_os="linux",target_os="macos")){asset.name.as_str()}else{"ArtCraftMasterSuite-Setup.exe"});
         if asset.name.ends_with(".zip"){
             let mut archive=zip::ZipArchive::new(fs::File::open(&partial).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;
             let candidates:Vec<_>=archive.file_names().filter(|n|n.rsplit('/').next()==Some("ArtCraftMasterSuite-Setup.exe")).map(str::to_owned).collect();
@@ -80,7 +83,11 @@ pub fn prepare(current:&str, mut progress:impl FnMut(String))->Result<Option<Pre
 }
 pub fn launch(update:&Prepared)->Result<(),String>{
     #[cfg(target_os="linux")] {return launch_linux(update);}
-    #[cfg(not(target_os="linux"))] {
+    #[cfg(target_os="macos")] {
+        if hash_file(&update.installer)?!=update.digest{return Err("Staged disk image changed; update cancelled".into());}
+        return crate::macos::launch_update(&update.installer);
+    }
+    #[cfg(not(any(target_os="linux",target_os="macos")))] {
 
     if hash_file(&update.installer)?!=update.digest{return Err("Staged installer changed; update cancelled".into());}
     let mut command=std::process::Command::new(&update.installer);

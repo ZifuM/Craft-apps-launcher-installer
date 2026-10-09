@@ -1,0 +1,18 @@
+ArtCraft Master Suite — macOS beta
+
+1. Drag ArtCraft Master Suite.app into Applications (or ~/Applications).
+2. Eject this disk image and open the installed app.
+3. Choose your project folder in onboarding, then install Craft apps in App Manager.
+
+This universal build contains Intel and Apple Silicon code. It targets macOS 12
+and later; desktop compatibility has not yet been validated on physical Macs.
+
+This beta is ad-hoc signed, not Apple Developer ID signed or notarized. macOS may
+block its first launch. Only if you trust this download, use Apple's Privacy &
+Security settings to approve it. Do not disable Gatekeeper system-wide.
+
+Updates require a writable installed application location. If Applications is
+not writable for your user, install in ~/Applications or replace the app manually.
+Do not run permanently from the disk image. Previous suite versions are retained
+in an .ArtCraft-update-* folder beside the app after automatic replacement.
+
