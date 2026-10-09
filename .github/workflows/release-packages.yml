@@ -27,10 +27,9 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name || inputs.tag }}
       - id: version
-        name: Check release version and destination
+        name: Check release version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
           import os, pathlib, tomllib
@@ -41,7 +40,6 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'tag={tag}\n')
           PY
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
 
   linux:
     needs: version
