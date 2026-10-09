@@ -24,7 +24,7 @@ cp LICENSE "$app/Contents/Resources/LICENSE.txt"
 # signing or notarization. Never remove quarantine or disable Gatekeeper.
 codesign --force --sign - --timestamp=none "$app"
 codesign --verify --deep --strict "$app"
-lipo -verify_arch arm64 x86_64 "$app/Contents/MacOS/artcraft-launcher"
+lipo "$app/Contents/MacOS/artcraft-launcher" -verify_arch arm64 x86_64
 ln -s /Applications "$stage/disk/Applications"
 cp "$repo/packaging/macos/INSTALL.txt" "$stage/disk/INSTALL.txt"
 output="$repo/dist/macos/ArtCraftMasterSuite-macOS-universal.dmg"

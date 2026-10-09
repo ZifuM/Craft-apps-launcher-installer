@@ -62,7 +62,7 @@ pub fn install_dmg(dmg: &Path, destination: &Path, suite: bool) -> Result<PathBu
     let app = &apps[0];
     let executable = bundle_executable(app)?;
     let architecture = if cfg!(target_arch = "aarch64") { "arm64" } else { "x86_64" };
-    output(Command::new("/usr/bin/lipo").args(["-verify_arch", architecture]).arg(&executable))?;
+    output(Command::new("/usr/bin/lipo").arg(&executable).args(["-verify_arch", architecture]))?;
     if suite {
         if bundle_info(app)?["CFBundleIdentifier"] != BUNDLE_ID { return Err("Update contains a different application.".into()); }
         output(Command::new("/usr/bin/codesign").args(["--verify", "--deep", "--strict"]).arg(app))?;
