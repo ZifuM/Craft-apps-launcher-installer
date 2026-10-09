@@ -21,6 +21,6 @@ p=Path('.cargo/config.toml');s=p.read_text();s=s.replace(str(Path('vendor-regist
 PY
 mkdir -p "$repo/dist/linux"
 flatpak-builder --user --install-deps-from=flathub --repo="$repo/dist/linux/flatpak-repo" "$stage/build" "$stage/manifest.json"
-flatpak build-bundle --arch="$arch" --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo "$repo/dist/linux/flatpak-repo" "$repo/dist/linux/ArtCraftMasterSuite-Linux-$arch.flatpak" io.github.ZifuM.ArtCraftMasterSuite
+flatpak build-bundle --arch="$arch" --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo "$repo/dist/linux/flatpak-repo" "$repo/dist/linux/Linux-$arch.flatpak" io.github.ZifuM.ArtCraftMasterSuite
 cd "$repo/dist/linux"
-sha256sum "ArtCraftMasterSuite-Linux-$arch.flatpak" > "ArtCraftMasterSuite-Linux-$arch.flatpak.sha256"
+sha256sum "Linux-$arch.flatpak" > "Linux-$arch.flatpak.sha256"

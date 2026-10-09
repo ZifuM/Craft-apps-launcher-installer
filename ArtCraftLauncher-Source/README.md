@@ -1,12 +1,14 @@
 # ArtCraft Master Suite
 
-A native Windows home for Storytold’s open-source creative and office apps. Install and update the apps, keep local projects together, and open each project with the app that supports it.
+A native Windows, Linux and macOS home for Storytold’s open-source creative and office apps. Install and update the apps, keep local projects together, and open each project with the app that supports it.
 
 > ArtCraft Master Suite is an independent community project. It is not affiliated with Adobe Inc. Adobe and other product names and marks belong to their respective owners.
 
-## Linux source preview
+## Build 3.2 prerelease
 
-Linux AppImage and Flatpak build files are in `../packaging/linux/`. See [Linux build instructions](../docs/LINUX.md). Native Linux builds are not yet validated; the Linux source archive includes build inputs, not runnable binaries.
+Version `3.2.0-beta.1` shares the updated interface across all desktop targets. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+
+The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `windows_backup` filenames now contain shared code. Native operations remain behind target-specific guards. Old view source files remain for reference but are no longer selected by `main.rs`.
 
 ## Features
 

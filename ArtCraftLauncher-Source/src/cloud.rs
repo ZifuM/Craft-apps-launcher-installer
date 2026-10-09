@@ -1,6 +1,8 @@
 //! Versioned local backups delivered to folders managed by provider desktop apps.
-//! This module never claims that a provider has finished uploading a local copy.
+//! Provider upload confirmation is used only where a native OS API reports it.
 use super::*;
+#[path = "windows_backup.rs"]
+pub(crate) mod windows_backup;
 use std::{io::Write,sync::atomic::{AtomicBool,Ordering}};
 #[derive(Clone,Copy,Debug,PartialEq,Eq,Hash,Serialize,Deserialize)]
 pub enum Provider{Google,Dropbox,OneDrive}
@@ -72,6 +74,7 @@ pub struct CloudSettings{pub selected:Vec<PathBuf>,pub automatic:bool,pub target
 struct Manifest{schema:u32,name:String,file:String,digest:String,bytes:u64,modified:String}
 enum Event{Progress(String),Copied(Receipt),History(Vec<RemoteFile>),FileError(PathBuf,Provider,String),Finished(Result<String,String>)}
 pub struct Cloud{
+  pub monitor:windows_backup::Monitor,
  pub settings:CloudSettings,pub history:Vec<RemoteFile>,pub busy:bool,pub message:String,pub errors:HashMap<(PathBuf,Provider),String>,pub search:String,pub tab:u8,pub view_filter:u8,pub disconnect_provider:Option<Provider>,
  tx:Sender<Event>,rx:Receiver<Event>,cancel:Arc<AtomicBool>,last_auto:Instant,save_error:Option<String>,
 }
@@ -88,12 +91,12 @@ impl Cloud{
  pub fn new()->Self{
   let(tx,rx)=mpsc::channel();let mut message=String::new();let settings=match settings_path().ok().filter(|p|p.exists()){
    Some(path)=>match fs::read(path).ok().and_then(|b|serde_json::from_slice(&b).ok()){Some(v)=>v,None=>{message="Saved backup settings could not be read. Re-select your sync folders.".into();CloudSettings::default()}},None=>CloudSettings::default()};
-  Self{settings,history:Vec::new(),busy:false,message,errors:HashMap::new(),search:String::new(),tab:0,view_filter:0,disconnect_provider:None,tx,rx,cancel:Arc::new(AtomicBool::new(false)),last_auto:Instant::now(),save_error:None}
+  Self{monitor:windows_backup::Monitor::new(),settings,history:Vec::new(),busy:false,message,errors:HashMap::new(),search:String::new(),tab:0,view_filter:0,disconnect_provider:None,tx,rx,cancel:Arc::new(AtomicBool::new(false)),last_auto:Instant::now(),save_error:None}
  }
  fn persist(&self)->Result<(),String>{let path=settings_path()?;fs::create_dir_all(path.parent().unwrap()).map_err(|e|e.to_string())?;let temp=path.with_extension("new");fs::write(&temp,serde_json::to_vec_pretty(&self.settings).map_err(|e|e.to_string())?).map_err(|e|e.to_string())?;fs::rename(temp,path).map_err(|e|e.to_string())}
  pub fn save(&mut self){if let Err(e)=self.persist(){self.message=format!("Could not save backup settings: {e}");self.save_error=Some(self.message.clone());self.settings.automatic=false;}else{self.save_error=None;}}
  pub fn connect(&mut self,p:Provider){
-  if self.busy{return;}let mut picker=rfd::FileDialog::new().set_title(format!("Choose your {} synced folder",p.name()));if let Some(path)=self.settings.folders.get(&p).map(|f|f.path.clone()).or_else(||detect(p)){picker=picker.set_directory(path);}
+  if self.busy{return;}let mut picker=rfd::FileDialog::new().set_title(crate::tr(format!("Choose your {} synced folder",p.name())));if let Some(path)=self.settings.folders.get(&p).map(|f|f.path.clone()).or_else(||detect(p)){picker=picker.set_directory(path);}
   if let Some(path)=picker.pick_folder(){let result=(||{let resolved=checked_root(&path)?;
     if self.settings.folders.iter().any(|(other,f)|*other!=p&&fs::canonicalize(&f.path).ok().is_some_and(|r|resolved.starts_with(&r)||r.starts_with(&resolved))){return Err("Choose a separate folder for each provider; overlapping destinations would duplicate the same backup.".into());}
     base(&path)?;let previous=self.settings.clone();self.settings.folders.insert(p,Folder{path});if !self.settings.targets.contains(&p){self.settings.targets.push(p);}self.settings.receipts.retain(|r|r.remote.provider!=p);
@@ -115,6 +118,7 @@ impl Cloud{
    Event::History(files)=>self.history=files,Event::FileError(path,p,e)=>{self.errors.insert((path,p),e);},
    Event::Finished(result)=>{self.busy=false;self.last_auto=Instant::now();self.message=match result{Ok(message)=>if let Some(error)=&self.save_error{error.clone()}else if self.errors.is_empty(){message}else{"Some files could not be copied. Check their status and retry.".into()},Err(e)=>e};}
   }}
+    self.monitor.tick(&self.settings);
   let delay=if self.errors.is_empty(){30}else{120};
   if self.settings.automatic&&!self.busy&&self.last_auto.elapsed()>=Duration::from_secs(delay){self.last_auto=Instant::now();if projects.iter().any(|p|self.settings.selected.contains(&p.path)&&matches!(self.status(p),"Pending copy"|"Needs attention")){self.sync(projects);}}
  }

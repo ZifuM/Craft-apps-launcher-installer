@@ -22,7 +22,7 @@ fi
 mkdir -p "$repo/dist/linux"
 cd "$repo/dist/linux"
 export APPIMAGE_EXTRACT_AND_RUN=1
-export OUTPUT="ArtCraftMasterSuite-Linux-$arch.AppImage"
+export OUTPUT="Linux-$arch.AppImage"
 "$deploy" --appdir "$appdir" --executable "$(command -v pdftoppm)" --output appimage
 sha256sum "$OUTPUT" > "$OUTPUT.sha256"
 echo "Created $repo/dist/linux/$OUTPUT"

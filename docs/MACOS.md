@@ -1,12 +1,14 @@
 # macOS beta
 
-Build 3.1 adds a universal macOS application and a drag-to-Applications disk image:
+Build 3.2 brings the current shared desktop interface and features to the universal macOS application:
 
-`ArtCraftMasterSuite-macOS-universal.dmg`
+`macOS-universal.dmg`
 
 The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and packaging are performed on a GitHub macOS runner; a successful build does not establish desktop compatibility on every supported OS version.
 
 ## Build status
+
+Build 3.2 source and packaging are prepared for `v3.2.0-beta.1`. Its native DMG build is pending the release workflow. The following status describes the earlier release.
 
 Build 3.1 was compiled for Intel and Apple Silicon on GitHub's Mac runner. The universal app, code-signature integrity and DMG integrity checks passed, and the downloaded DMG matches the draft release checksum. The installable DMG is attached to the Build 3.1 draft; desktop behavior has not yet been manually validated.
 
@@ -17,6 +19,8 @@ Open the DMG, drag **ArtCraft Master Suite.app** to Applications (or your user's
 This beta uses an ad-hoc code signature. It is **not Developer ID signed or notarized**. Apple may require approval in Privacy & Security before opening it. Do not disable Gatekeeper. Public distribution without the unsigned-app prompt will require an Apple Developer membership, Developer ID Application certificate and notarization credentials.
 
 ## Mac integration
+
+The compact screens, menus, text-size settings and translation catalog are shared with Windows/Linux. Search uses Command-F and the interface uses installed Mac fonts where available.
 
 - Settings and caches: `~/Library/Application Support/ArtCraft Master Suite`.
 - Managed Craft applications: `~/Applications/ArtCraft Apps/<app-id>/`.
@@ -30,9 +34,9 @@ This beta uses an ad-hoc code signature. It is **not Developer ID signed or nota
 
 ## Updates
 
-Both Intel and Apple Silicon select only `ArtCraftMasterSuite-macOS-universal.dmg` for suite updates. The downloader checks its SHA-256, then the Mac installer checks the bundle identifier, native architecture and code-signature integrity. The replacement waits for the suite to exit and retains the previous `.app` beside the installation in an `.ArtCraft-update-*` folder.
+Both Intel and Apple Silicon select `macOS-universal.dmg` for suite updates; the updater also accepts the historical universal DMG name. Older installed versions may need a one-time manual upgrade to recognize the new names. The downloader checks its SHA-256, then the Mac installer checks the bundle identifier, native architecture and code-signature integrity. The replacement waits for the suite to exit and retains the previous `.app` beside the installation in an `.ArtCraft-update-*` folder.
 
-The installed location must be writable by the current user. Running from a mounted disk image or App Translocation is not eligible for automatic replacement; install in Applications or `~/Applications` first. No administrator prompt, quarantine removal or Gatekeeper bypass is performed. The beta update channel is enabled by default for this beta build. Disable Include beta suite updates in Settings for stable releases only. Draft releases are never offered.
+The installed location must be writable by the current user. Running from a mounted disk image or App Translocation is not eligible for automatic replacement; install in Applications or `~/Applications` first. No administrator prompt, quarantine removal or Gatekeeper bypass is performed. New preferences default to stable releases only. Enable **Allow prerelease updates** in Settings to receive published prereleases; existing preferences are retained. Draft releases are never offered.
 
 ## Build
 

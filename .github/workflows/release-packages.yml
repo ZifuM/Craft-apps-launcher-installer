@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (for example v3.0.0)
+        description: Existing release tag to build (for example v3.2.0-beta.1)
         required: true
         type: string
 
@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,6 +40,7 @@ jobs:
               raise SystemExit(f'Release tag must be {version} or v{version}, matching Cargo.toml')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'tag={tag}\n')
+              output.write(f'prerelease={str("-" in version).lower()}\n')
           PY
 
   linux:
@@ -64,12 +66,12 @@ jobs:
           cargo build --locked --release --bin artcraft-setup
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path ../dist/windows -Force | Out-Null
-          Copy-Item -LiteralPath target/release/artcraft-setup.exe -Destination ../dist/windows/ArtCraftMasterSuite-Setup.exe
+          Copy-Item -LiteralPath target/release/artcraft-setup.exe -Destination ../dist/windows/Windows-x86_64.exe
       - uses: actions/upload-artifact@v4
         with:
           name: ArtCraftMasterSuite-Windows-x64
           if-no-files-found: error
-          path: dist/windows/ArtCraftMasterSuite-Setup.exe
+          path: dist/windows/Windows-x86_64.exe
 
   macos:
     needs: version
@@ -94,8 +96,8 @@ jobs:
           source = pathlib.Path('packages')
           destination = pathlib.Path('release')
           destination.mkdir()
-          names = ['ArtCraftMasterSuite-Setup.exe', 'ArtCraftMasterSuite-macOS-universal.dmg'] + [
-              f'ArtCraftMasterSuite-Linux-{arch}.{suffix}'
+          names = ['Windows-x86_64.exe', 'macOS-universal.dmg'] + [
+              f'Linux-{arch}.{suffix}'
               for arch in ('x86_64', 'aarch64') for suffix in ('AppImage', 'flatpak')
           ]
           sums = []
@@ -114,6 +116,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          IS_PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --prerelease --latest=false
+          fi
           gh release upload "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" --clobber
           echo "Windows EXE, macOS DMG and Linux AppImage/Flatpak downloads attached to release $RELEASE_TAG." >> "$GITHUB_STEP_SUMMARY"

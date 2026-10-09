@@ -17,6 +17,7 @@ pub fn tr(text: impl ToString) -> String {
     if language==0 { return text.to_owned(); }
     let catalog=CATALOG.get_or_init(|| {
         let mut rows: HashMap<String,Vec<String>>=serde_json::from_str(include_str!("../assets/translations.json")).expect("embedded translation catalog");
+        rows.extend(serde_json::from_str::<HashMap<String, Vec<String>>>(include_str!("../assets/translations-windows.json")).expect("desktop translation catalog"));
         let lower: Vec<_>=rows.iter().filter(|(key,_)| !key.contains("{0}")).map(|(key,row)|(key.to_lowercase(),row.clone())).collect();
         rows.extend(lower); rows
     });
@@ -34,7 +35,8 @@ pub fn tr(text: impl ToString) -> String {
     for (key,row) in templates {
         if let Some(values)=capture(key, text) {
             let mut result=row[language-1].clone();
-            for (i,value) in values.iter().enumerate() { result=result.replace(&format!("{{{i}}}"),value); }
+            for (i,value) in values.iter().enumerate() { let translated = catalog.get(value).or_else(||catalog.get(&value.to_lowercase())).filter(|_| !value.contains('{')).map(|row|row[language-1].as_str()).unwrap_or(value);
+                result=result.replace(&format!("{{{i}}}"),translated); }
             return result;
         }
     }
@@ -72,12 +74,13 @@ pub fn install_fonts(ctx: &egui::Context) {
         }
     }
     #[cfg(target_os="linux")]
-    for (name,candidates) in [("noto-cjk",["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc","/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"])] {
+    for (name,candidates) in [("noto-cjk",["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc","/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc","/run/host/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/run/host/fonts/noto-cjk/NotoSansCJK-Regular.ttc"])] {
         for path in candidates {if let Ok(bytes)=std::fs::read(path){fonts.font_data.insert(name.into(),egui::FontData::from_owned(bytes).into());fonts.families.entry(egui::FontFamily::Proportional).or_default().push(name.into());break;}}
     }
     #[cfg(target_os="macos")]
     for (name,path) in [("mac-chinese","/System/Library/Fonts/PingFang.ttc"),("mac-japanese","/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"),("mac-korean","/System/Library/Fonts/AppleSDGothicNeo.ttc")] {
         if let Ok(bytes)=std::fs::read(path){fonts.font_data.insert(name.into(),egui::FontData::from_owned(bytes).into());fonts.families.entry(egui::FontFamily::Proportional).or_default().push(name.into());}
     }
+    crate::windows_ui::toolbar::install_fonts(&mut fonts);
     ctx.set_fonts(fonts);
 }

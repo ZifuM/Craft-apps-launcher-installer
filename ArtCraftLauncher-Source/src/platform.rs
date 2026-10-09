@@ -87,3 +87,60 @@ pub fn spawn(command:&mut Command)->std::io::Result<std::process::Child>{
 pub fn reveal_label() -> &'static str {
  if cfg!(target_os="macos") { "Show in Finder" } else if cfg!(target_os="windows") { "Show in File Explorer" } else { "Show in file manager" }
 }
+
+/// Use the shell's item identifier, avoiding Explorer's special command-line parser.
+#[cfg(target_os="windows")]
+pub fn reveal_windows(path: &Path, select: bool) {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    std::thread::spawn(move || {
+        use windows::{core::HSTRING, Win32::{System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED}, UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems}}};
+        if select && path.exists() {
+            // A dedicated apartment avoids changing the GUI thread's COM model.
+            let revealed = unsafe {
+                if CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok() {
+                    let item = ILCreateFromPathW(&HSTRING::from(path.as_os_str()));
+                    let opened = if item.is_null() { false } else {
+                        // With no child list, the absolute item is selected in its parent.
+                        let opened = SHOpenFolderAndSelectItems(item, None, 0).is_ok();
+                        ILFree(Some(item));
+                        opened
+                    };
+                    CoUninitialize();
+                    opened
+                } else { false }
+            };
+            if revealed { return; }
+        }
+        // If a file was moved/deleted or selection fails, still open its actual
+        // containing folder. Never pass /select and a quoted path as one argument.
+        let folder = if select { path.parent().unwrap_or(&path) } else { &path };
+        if folder.is_dir() {
+            let _ = Command::new("explorer.exe").arg(folder).spawn();
+        }
+    });
+}
+
+/// Ask the desktop file manager to select the exact file; unsupported desktops
+/// still open its containing folder. Run off the UI thread and pass literal argv.
+#[cfg(target_os = "linux")]
+pub fn reveal_linux(path: &Path, select: bool) {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    std::thread::spawn(move || {
+        if select {
+            if let Ok(uri) = reqwest::Url::from_file_path(&path) {
+                // JSON's quoted string is also valid GVariant string syntax.
+                let quoted = serde_json::to_string(uri.as_str()).unwrap_or_default();
+                let mut command = Command::new("gdbus");
+                command.args(["call", "--session", "--dest", "org.freedesktop.FileManager1",
+                    "--object-path", "/org/freedesktop/FileManager1", "--method",
+                    "org.freedesktop.FileManager1.ShowItems", &format!("[{quoted}]"), ""]);
+                command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+                if spawn(&mut command).and_then(|mut child| child.wait()).is_ok_and(|status| status.success()) {
+                    return;
+                }
+            }
+        }
+        let folder = if select { path.parent().unwrap_or(&path) } else { &path };
+        let _ = spawn(Command::new("xdg-open").arg(folder));
+    });
+}

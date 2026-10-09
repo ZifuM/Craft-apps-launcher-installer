@@ -1,33 +1,21 @@
-# Linux port (development)
+# Linux packages — Build 3.2 prerelease
 
-The UI and core source are shared with Windows. Linux packaging is separate under `packaging/linux/`; macOS work is deferred. The release workflow builds standalone AppImage and Flatpak downloads for GitHub Releases. The optional source archive is for developers, not installation.
-
-## Source bundle
-
-Download **ArtCraftMasterSuite-3.0-Linux-Source.tar.gz**, extract it, then read **START_HERE.md** in the extracted folder. The bundle preserves the repository layout so both build scripts can run from its root. It excludes Git history, Windows installers, previous UI backups, build caches and existing release archives. It includes source licenses and checked-in dependencies; other dependencies still require an internet connection when building.
-
-```sh
-tar -xzf ArtCraftMasterSuite-3.0-Linux-Source.tar.gz
-cd ArtCraftMasterSuite-3.0-Linux-Source
-```
-
-To recreate this archive from the repository, run `python3 packaging/linux/package-source.py`. The script also updates the archive entry in the repository's `SHA256SUMS.txt`.
+The latest Windows interface, update discovery, settings and core source are shared with Linux and macOS. Linux packaging is under `packaging/linux/`. The release workflow builds standalone AppImage and Flatpak downloads for GitHub Releases. The optional source archive is for developers, not installation.
 
 ## Current status
 
-- Build 3.0 Windows x64, Linux x86-64 and Linux ARM64 compilation and packaging succeeded on GitHub Actions.
-- Both AppImage and Flatpak files are attached to the Build 3.0 draft release, with verified SHA-256 checksums. Desktop behavior and installation still need hands-on Linux validation.
-- The `Linux packages` workflow builds x86-64 and ARM64 packages on native Linux runners. The `Release downloads` workflow calls it, builds the Windows installer, and attaches all five installable files plus checksums to the selected GitHub release after all builds succeed. See [RELEASING.md](RELEASING.md).
-- The workflow output is a build candidate, not a claim of completed desktop validation. Installation, updates, file portals, tray support, Wayland/X11 and app launching still need Linux validation.
+Build 3.0/3.1 native packages were produced previously. Build 3.2 source and packaging are prepared; new packages must be built from `v3.2.0-beta.1` on GitHub Actions before publication. Both x86_64 and ARM64 use native Linux runners. The complete release contains six installers across Windows, Linux and macOS. See [RELEASING.md](RELEASING.md).
+
+Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 
 ## Package outputs
 
 | File | Target |
 |---|---|
-| `ArtCraftMasterSuite-Linux-x86_64.AppImage` | Intel/AMD 64-bit Linux |
-| `ArtCraftMasterSuite-Linux-aarch64.AppImage` | ARM64 Linux |
-| `ArtCraftMasterSuite-Linux-x86_64.flatpak` | Flatpak, Intel/AMD 64-bit |
-| `ArtCraftMasterSuite-Linux-aarch64.flatpak` | Flatpak, ARM64 |
+| `Linux-x86_64.AppImage` | Intel/AMD 64-bit Linux |
+| `Linux-aarch64.AppImage` | ARM64 Linux |
+| `Linux-x86_64.flatpak` | Flatpak, Intel/AMD 64-bit |
+| `Linux-aarch64.flatpak` | Flatpak, ARM64 |
 
 Outputs go to `dist/linux/`, which is ignored by Git. Internal Actions artifacts may use ZIP containers, but the release workflow extracts the packages and uploads individual `.AppImage`, `.flatpak` and `.exe` files to release Assets. Users do not need to download a ZIP or source archive.
 
@@ -60,10 +48,12 @@ Each download is checked against the release's `SHA256SUMS.txt`. Linux also chec
 Manual and automatic updates share the same selection logic:
 
 - **Windows x64:** Windows suite installer only.
-- **AppImage:** exactly `ArtCraftMasterSuite-Linux-<architecture>.AppImage`. SHA-256 and architecture are checked, and the replacement is staged beside the current writable AppImage. A previous copy remains for manual recovery.
-- **Flatpak:** identifies the running installation from /.flatpak-info and uses its exact ref, architecture, branch and configured origin. It downloads without deploying, then applies the staged update when the user chooses Install and restart, or when automatic restart becomes eligible. It does not install an AppImage or EXE over Flatpak.
+- **AppImage:** exactly `Linux-<architecture>.AppImage`. SHA-256 and architecture are checked, and the replacement is staged beside the current writable AppImage. A previous copy remains for manual recovery.
+- **Flatpak:** downloads the matching `Linux-<architecture>.flatpak` from the selected GitHub release, checks SHA-256, and installs that bundle when the update is accepted. The existing user/system scope is preserved. Custom branches and custom installations use their software manager.
 
-Publish exact AppImage filenames and one combined `SHA256SUMS.txt` with future GitHub releases. Flatpak automatic updates require a configured, maintained Flatpak repository; a standalone local bundle without a reachable update origin cannot auto-update. The packaging script produces a repository under `dist/linux/flatpak-repo`; public signing, hosting and remote configuration are separate release steps. System-wide Flatpak updates may require desktop authorization.
+**Allow prerelease updates** applies to both package formats and to manual/automatic checks. Drafts are excluded. Fresh preferences default to stable-only; existing preferences are retained. The updater also accepts historical package names. Older versions may require manual installation once to recognize the new names.
+
+Standalone GitHub bundles no longer require a hosted Flatpak update repository for the suite updater. The Flatpak runtime still comes from the configured runtime source. System-wide installation may require desktop authorization; a failure leaves an actionable error rather than silently changing scope.
 
 ## Flatpak permissions
 
@@ -78,4 +68,4 @@ Host integration permits commands outside the sandbox; it is used for launching 
 - PDF first-page previews use `pdftoppm`; AppImage packaging bundles it. For Flatpak host previews, install the host's poppler-utils package. Existing embedded-image, PSD and content preview code is shared; Windows shell-only thumbnails still have no exact Linux equivalent.
 - Dropbox has a Linux client. Google Drive and OneDrive do not have official Linux desktop clients; a separately configured sync tool can supply a folder for versioned backups. The suite reports copies to that folder, not verified cloud uploads.
 - Plugin/save/export integration remains experimental. Upstream limitations described in PLUGIN_MANAGEMENT.md still apply.
-- macOS builds and DMG packaging are not part of this phase.
+- The shared UI uses native Linux font candidates, with bundled egui fallbacks; CJK languages use installed Noto fonts where available.

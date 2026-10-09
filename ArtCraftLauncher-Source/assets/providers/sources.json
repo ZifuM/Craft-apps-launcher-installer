@@ -1,0 +1,19 @@
+{
+  "purpose": "Identify user-selected sync services. Original third-party trademarks; not licensed as part of the suite source code.",
+  "assets": {
+    "google-drive.png": {
+      "source": "https://www.gstatic.com/images/branding/productlogos/drive_2026/v2/web-64dp/logo_drive_2026_color_2x_web_64dp.png",
+      "guidelines": "https://developers.google.com/workspace/drive/api/guides/branding",
+      "owner": "Google"
+    },
+    "dropbox.svg": {
+      "source": "https://fjord.dropboxstatic.com/warp/conversion/dropbox/warp/icons/Dropbox-logo-nav.svg?id=d587e174-e284-42e8-a18c-85c0d8e57e9e",
+      "guidelines": "https://www.dropbox.com/branding",
+      "owner": "Dropbox"
+    },
+    "onedrive.svg": {
+      "source": "https://static2.sharepointonline.com/files/fabric/assets/brand-icons/product/svg/onedrive_48x1.svg",
+      "owner": "Microsoft"
+    }
+  }
+}

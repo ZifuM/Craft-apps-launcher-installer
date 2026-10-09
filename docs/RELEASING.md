@@ -1,34 +1,41 @@
 # Publishing installable downloads
 
-The **Release downloads** GitHub Actions workflow builds the suite on Windows, Linux and macOS and attaches the actual files to GitHub Releases. No WSL or local Linux installation is needed. It uses GitHub's built-in token; no personal access token needs to be saved in the repository.
+## Build 3.2 prerelease
 
-## Build 3.0
+Package version: `3.2.0-beta.1`. Release tag: `v3.2.0-beta.1`.
 
-1. Commit and push the updated source, `packaging/` files and both `.github/workflows/` files using GitHub Desktop.
-2. On GitHub, create a release with the tag **v3.0.0**, targeting that updated commit. Use `RELEASE_NOTES_3.0.md` as the starting notes.
-3. Publish the release (mark it as a prerelease while Linux is being validated). This starts **Release downloads** automatically.
-4. Wait for the workflow to succeed. It uploads these individual assets, without wrapping them in ZIP files:
+1. Commit and push the intended source, assets, packaging and workflows after approval.
+2. Create a **draft prerelease** for `v3.2.0-beta.1`, targeting that commit. Use `RELEASE_NOTES_3.2.md` for its notes.
+3. Run **Actions → Release downloads → Run workflow**, choosing the updated default branch and that tag.
+4. Wait for all native jobs to succeed. The workflow builds Windows x64, Linux x86_64/ARM64 AppImage and Flatpak packages, and the universal macOS DMG from the tag.
+5. Review/download the packages before publishing the prerelease. Building or uploading assets does not publish a draft.
 
-   - `ArtCraftMasterSuite-Setup.exe` — Windows x64 installer.
-   - `ArtCraftMasterSuite-Linux-x86_64.AppImage` — Intel/AMD Linux.
-   - `ArtCraftMasterSuite-Linux-x86_64.flatpak` — Intel/AMD Linux.
-   - `ArtCraftMasterSuite-Linux-aarch64.AppImage` — ARM64 Linux.
-   - `ArtCraftMasterSuite-Linux-aarch64.flatpak` — ARM64 Linux.
-   - `ArtCraftMasterSuite-macOS-universal.dmg` — Intel and Apple Silicon Macs (Build 3.1 onward).
-   - `SHA256SUMS.txt` — combined checksums for the installer packages.
+The version job rejects tags that do not match Cargo.toml. Tags with a prerelease suffix are marked as prereleases and excluded from GitHub's latest stable release by the upload job.
 
-For a release that already exists, use **Actions → Release downloads → Run workflow**, select the updated default branch and enter its release tag. This also works with an existing draft release, allowing package review before publishing. The tag must point to the intended source and match Cargo.toml (`3.0.0` or `v3.0.0`). Do not reuse an old release tag for new source.
+## Asset names
 
-If a job fails, no new packages are uploaded by that run. Open the failed job log, fix the cause and build the corrected source before publishing it. Re-running a successful tag replaces assets with the same names. Internal Actions artifacts are staging downloads; end users should use the individual files in the release's **Assets** section.
+- `Windows-x86_64.exe`
+- `Linux-x86_64.AppImage`
+- `Linux-x86_64.flatpak`
+- `Linux-aarch64.AppImage`
+- `Linux-aarch64.flatpak`
+- `macOS-universal.dmg`
+- `SHA256SUMS.txt`
 
-## Future versions
+Names contain no spaces and follow `OS-architecture.extension`. The `.flatpak` spelling is intentional. Internal Actions artifacts may be ZIP containers; the release uploads individual packages.
 
-Update the package version in Cargo.toml and Cargo.lock, commit the changes, and create a matching release tag. The workflow compiles fresh binaries from that tag, including the launcher embedded in the Windows setup EXE. It never republishes the older EXE stored at the repository root.
+All six packages must be present and nonempty before upload. Checksums are generated from those fresh build outputs. A failed native job prevents that run's upload job. Re-running a successful tag replaces same-name assets; never reuse a version tag for different source.
 
-Keep the asset filenames unchanged: the suite updater selects the exact platform and architecture filename and uses the release checksums. Flatpak bundles install directly, but automatic Flatpak updates additionally require a hosted Flatpak repository configured as the installation's origin; GitHub bundle uploads alone do not provide that service.
+The workflow uses GitHub's built-in token and never republishes the older setup executable stored at the repository root. Windows builds the launcher before setup because setup embeds that executable.
 
-Build completion does not establish desktop compatibility. Linux installation, launching, tray integration and updating still require native validation before describing the Linux release as verified. Windows signing is not configured by this workflow.
+## Update compatibility
 
-## Build 3.1 macOS
+Build 3.2 recognizes both new and historical filenames. Older installed suite versions may require a one-time manual upgrade because their updater expects the old names. Upstream Craft app package names are unchanged.
 
-Use tag `v3.1.0` and `RELEASE_NOTES_3.1.md` for the next release. The new release workflow also builds the universal DMG on a Mac runner. The `.app` is ad-hoc signed, not Developer ID signed or notarized. Keep this release a draft until the packages are available for review. The already published Build 3.0 files remain unchanged.
+AppImage updates preserve a previous copy. Flatpak updates use the exact checksum-verified GitHub bundle and preserve user/system installation scope. macOS uses the universal DMG and retains its previous app bundle. The prerelease preference applies to every package type; drafts are excluded.
+
+## Native requirements
+
+Linux and macOS packages are built on native GitHub runners; WSL is not required on the maintainer's Windows PC. Successful packaging does not establish desktop compatibility. Installation, launching, tray behavior and updates still require native desktop validation.
+
+Windows Authenticode signing is not configured. The Mac app is ad-hoc signed, not Developer ID signed or notarized. Historical Build 3.0 and 3.1 assets keep their original names.

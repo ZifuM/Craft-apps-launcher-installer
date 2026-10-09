@@ -4,6 +4,7 @@ import sys
 import tomllib
 
 version = tomllib.loads(pathlib.Path(sys.argv[1]).read_text())["package"]["version"]
+bundle_version = version.split("-", 1)[0].split("+", 1)[0]
 info = {
     "CFBundleName": "ArtCraft Master Suite",
     "CFBundleDisplayName": "ArtCraft Master Suite",
@@ -11,8 +12,9 @@ info = {
     "CFBundleExecutable": "artcraft-launcher",
     "CFBundleIconFile": "ArtCraft.icns",
     "CFBundlePackageType": "APPL",
-    "CFBundleShortVersionString": version,
-    "CFBundleVersion": version,
+    "CFBundleShortVersionString": bundle_version,
+    "CFBundleVersion": bundle_version,
+    "ArtCraftReleaseVersion": version,
     "LSMinimumSystemVersion": "12.0",
     "NSHighResolutionCapable": True,
     "NSSupportsAutomaticGraphicsSwitching": True,

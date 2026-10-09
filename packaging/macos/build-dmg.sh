@@ -27,9 +27,9 @@ codesign --verify --deep --strict "$app"
 lipo "$app/Contents/MacOS/artcraft-launcher" -verify_arch arm64 x86_64
 ln -s /Applications "$stage/disk/Applications"
 cp "$repo/packaging/macos/INSTALL.txt" "$stage/disk/INSTALL.txt"
-output="$repo/dist/macos/ArtCraftMasterSuite-macOS-universal.dmg"
+output="$repo/dist/macos/macOS-universal.dmg"
 hdiutil create -volname "ArtCraft Master Suite" -srcfolder "$stage/disk" -ov -format UDZO "$output"
 hdiutil verify "$output"
 cd "$repo/dist/macos"
-shasum -a 256 ArtCraftMasterSuite-macOS-universal.dmg > ArtCraftMasterSuite-macOS-universal.dmg.sha256
+shasum -a 256 macOS-universal.dmg > macOS-universal.dmg.sha256
 
