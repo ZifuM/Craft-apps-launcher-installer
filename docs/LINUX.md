@@ -15,8 +15,8 @@ To recreate this archive from the repository, run `python3 packaging/linux/packa
 
 ## Current status
 
-- Windows compilation of the shared source has succeeded during the port.
-- Linux compilation, package generation and desktop behavior have **not yet been verified on Linux**. This Windows machine has no WSL, Linux container runtime or Linux runner attached.
+- Build 3.0 Windows x64, Linux x86-64 and Linux ARM64 compilation and packaging succeeded on GitHub Actions.
+- Both AppImage and Flatpak files are attached to the Build 3.0 draft release, with verified SHA-256 checksums. Desktop behavior and installation still need hands-on Linux validation.
 - The `Linux packages` workflow builds x86-64 and ARM64 packages on native Linux runners. The `Release downloads` workflow calls it, builds the Windows installer, and attaches all five installable files plus checksums to the selected GitHub release after all builds succeed. See [RELEASING.md](RELEASING.md).
 - The workflow output is a build candidate, not a claim of completed desktop validation. Installation, updates, file portals, tray support, Wayland/X11 and app launching still need Linux validation.
 

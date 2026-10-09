@@ -4,7 +4,7 @@ This development preview begins the Linux port while retaining the suite's exist
 
 ## Downloads
 
-The release workflow produces these installable files and attaches them directly to this release after all builds succeed:
+The following installable files are attached directly to this release:
 
 - **Windows x64:** `ArtCraftMasterSuite-Setup.exe`
 - **Linux x86-64:** `ArtCraftMasterSuite-Linux-x86_64.AppImage` or `ArtCraftMasterSuite-Linux-x86_64.flatpak`
@@ -13,7 +13,7 @@ The release workflow produces these installable files and attaches them directly
 
 Choose one package for your operating system and architecture. Linux users do not need to compile the source. Flatpak requires Flatpak support and may download a runtime on first installation.
 
-**Current preparation status:** Linux builds have not yet completed or been validated. These filenames describe the configured outputs, not files already available. Only publish claims of working Linux packages after reviewing the successful builds and checking them on Linux.
+**Build status:** Windows x64, Linux x86-64 and Linux ARM64 packages built successfully on GitHub Actions. All five downloads were checked against the release SHA-256 checksums. Linux desktop installation and runtime behavior still need hands-on validation.
 
 ## Added in this preview
 
@@ -34,7 +34,7 @@ Choose one package for your operating system and architecture. Linux users do no
 
 ## Important limitations
 
-- The shared code compiled on Windows. Native Linux compilation, package creation, installation, updates and desktop integration still need validation on Linux.
+- Native Windows and Linux compilation and package creation succeeded. Linux installation, updates and desktop integration still need hands-on validation.
 - Craft apps are downloaded separately through App Manager; they are not bundled with the suite installer.
 - Flatpak host integration allows launching applications and update commands outside the sandbox. The manifest avoids blanket home-directory access; project and backup folders are selected through the desktop portal.
 - Flatpak automatic updates require a configured, maintained update repository. A standalone source archive or local Flatpak bundle cannot provide that service by itself.
