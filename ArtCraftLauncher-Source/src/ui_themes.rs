@@ -68,6 +68,7 @@ impl Launcher {
                 self.prefs.ui_theme.name()
             )));
             let busy = self.cloud.busy
+                || self.direct_cloud.busy
                 || self.plugins.busy
                 || self.pending_launch.is_some()
                 || self.suite_update_busy

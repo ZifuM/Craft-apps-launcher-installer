@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (for example v3.4.0-beta.1)
+        description: Existing release tag to build (for example v3.4.0-beta.2)
         required: true
         type: string
       publish:
@@ -53,6 +53,8 @@ jobs:
     uses: ./.github/workflows/linux-build.yml
     with:
       ref: ${{ needs.version.outputs.tag }}
+    secrets:
+      ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET }}
 
   windows:
     needs: version
@@ -63,9 +65,12 @@ jobs:
           ref: ${{ needs.version.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Build Windows x64 installer
+        env:
+          ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET }}
         shell: pwsh
         working-directory: ArtCraftLauncher-Source
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET)) { throw 'Google desktop configuration is missing from repository Actions secrets.' }
           cargo build --locked --release --bin artcraft-launcher
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo build --locked --release --bin artcraft-setup
@@ -83,6 +88,8 @@ jobs:
     uses: ./.github/workflows/macos-build.yml
     with:
       ref: ${{ needs.version.outputs.tag }}
+    secrets:
+      ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET }}
 
   publish:
     needs: [version, linux, windows, macos]

@@ -122,6 +122,11 @@ impl Launcher {
             format!("Files moved, but settings could not be saved: {e}. Restart to retry recovery.")
         })?;
         self.cloud.persist()?;
+        for path in &mut self.direct_cloud.settings.selected { remap(path, record); }
+        self.direct_cloud.settings.confirmed = std::mem::take(&mut self.direct_cloud.settings.confirmed)
+            .into_iter().map(|(mut path, receipt)| { remap(&mut path, record); (path, receipt) }).collect();
+        self.direct_cloud.errors.clear();
+        self.direct_cloud.persist()?;
         plugins::relocate_workspace(&record.source, &record.destination)?;
         for app in APPS {
             workspace_bridge::prepare(&record.destination, app)?;
@@ -185,6 +190,7 @@ impl Launcher {
     pub(super) fn folder_move_dialog(&mut self, ctx: &egui::Context) {
         let ready = !self.prefs.scanning
             && !self.cloud.busy
+            && !self.direct_cloud.busy
             && self.pending_launch.is_none()
             && !self.suite_update_busy && !self.plugins.busy;
         let Some(dialog) = &mut self.folder_move else {

@@ -1,6 +1,9 @@
 name: Linux packages
 on:
   workflow_call:
+    secrets:
+      ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET:
+        required: false
     inputs:
       ref:
         type: string
@@ -25,6 +28,8 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: aarch64
     runs-on: ${{ matrix.runner }}
+    env:
+      ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET: ${{ secrets.ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -35,7 +40,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev libx11-dev libxkbcommon-dev libwayland-dev libgl1-mesa-dev libfuse2t64 patchelf desktop-file-utils flatpak flatpak-builder zsync poppler-utils
       - name: Build AppImage
-        run: bash packaging/linux/build-appimage.sh
+        run: |
+          test -n "$ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET" || { echo "Google desktop configuration is missing from repository Actions secrets." >&2; exit 1; }
+          bash packaging/linux/build-appimage.sh
       - name: Prepare Flatpak SDK
         run: |
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo

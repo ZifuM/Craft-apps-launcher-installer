@@ -330,13 +330,6 @@ impl Launcher {
                             "Discover, install & update",
                             None,
                         );
-                        self.modern_side_link(
-                            ui,
-                            Page::Cloud,
-                            "Cloud",
-                            "Your project backups",
-                            None,
-                        );
                         if installed > 0 {
                             if !compact {
                                 ui.add_space(22.0);

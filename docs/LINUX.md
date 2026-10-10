@@ -4,7 +4,7 @@ The latest Windows interface, update discovery, settings and core source are sha
 
 ## Current status
 
-Build 3.4 uses the shared V2/Legacy themes, popup Settings and Cloud, window memory, project-folder moves and startup animations and the existing native Linux packaging. The x86_64 and ARM64 AppImage and Flatpak packages built successfully from `v3.4.0-beta.1` on native GitHub runners. All four files are attached to the draft prerelease, and downloaded copies match the release checksums. Build 3.4 remains unpublished for review. Native desktop behavior has not been manually validated for this build.
+Build `v3.4.0-beta.2` uses the shared V2/Legacy themes, popup Settings, dedicated Cloud screen, window memory, project-folder moves and startup animations. Direct Google Drive sync and Local NAS backups preserve workspace subfolders. Native Ubuntu runners build x86_64 and ARM64 AppImage and Flatpak packages from the release tag; all four are included in the prerelease along with SHA-256 checksums. Native desktop behavior has not been manually validated for this build.
 
 Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 
@@ -66,6 +66,6 @@ Host integration permits commands outside the sandbox; it is used for launching 
 - Projects, preferences, previews and app installations use Linux paths. Windows data is not migrated automatically.
 - Startup uses a per-user desktop entry. Tray support requires a StatusNotifierItem host; if unavailable, the suite remains visible. Some desktops need a tray extension.
 - PDF first-page previews use `pdftoppm`; AppImage packaging bundles it. For Flatpak host previews, install the host's poppler-utils package. Existing embedded-image, PSD and content preview code is shared; Windows shell-only thumbnails still have no exact Linux equivalent.
-- Dropbox has a Linux client. Google Drive and OneDrive do not have official Linux desktop clients; a separately configured sync tool can supply a folder for versioned backups. The suite reports copies to that folder, not verified cloud uploads.
+- Google Drive uploads work without a provider desktop client, and Local NAS backups use a mounted network share selected through the folder picker. Both preserve the app's Projects/Assets/Exports/Plugins folders. Sign-in uses the browser and stores credentials in a running Secret Service, such as GNOME Keyring. The Flatpak manifest permits `org.freedesktop.secrets`; use the folder picker to grant access to a NAS mount. Release builds include the configured Google Desktop OAuth settings, including inside Flatpak. Dropbox and OneDrive are not available yet; see [Cloud setup](CLOUD_SETUP.md).
 - Plugin/save/export integration remains experimental. Upstream limitations described in PLUGIN_MANAGEMENT.md still apply.
 - The shared UI uses native Linux font candidates, with bundled egui fallbacks; CJK languages use installed Noto fonts where available.

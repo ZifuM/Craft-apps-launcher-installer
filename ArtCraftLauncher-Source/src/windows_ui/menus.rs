@@ -260,12 +260,6 @@ impl Launcher {
             self.toggle_project_favorite(&project.path);
             ui.close_menu();
         }
-        if item(ui, "Cloud backup", true, false).clicked() {
-            self.cloud.tab = 0;
-            self.cloud.search = project.title.clone();
-            self.open_cloud();
-            ui.close_menu();
-        }
         if item(ui, "Properties", true, false).clicked() {
             self.properties = Some(Properties::project(project));
             ui.close_menu();

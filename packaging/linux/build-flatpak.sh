@@ -12,6 +12,17 @@ shutil.copytree(sys.argv[1],sys.argv[2],dirs_exist_ok=True,ignore=shutil.ignore_
 PY
 cp "$repo/packaging/linux/"*.desktop "$repo/packaging/linux/"*.xml "$stage/source/"
 cp "$repo/packaging/linux/io.github.ZifuM.ArtCraftMasterSuite.json" "$stage/manifest.json"
+# Cargo runs inside the Flatpak build sandbox and does not inherit the host's
+# OAuth build variable. Forward it through the temporary, untracked manifest.
+python3 - "$stage/manifest.json" <<'PY'
+import json, os, pathlib, sys
+path = pathlib.Path(sys.argv[1])
+manifest = json.loads(path.read_text())
+secret = os.environ.get('ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET', '')
+if secret:
+    manifest.setdefault('build-options', {}).setdefault('env', {})['ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET'] = secret
+path.write_text(json.dumps(manifest, indent=2))
+PY
 cd "$stage/source"
 mkdir -p .cargo
 cargo vendor --locked vendor-registry > .cargo/config.toml

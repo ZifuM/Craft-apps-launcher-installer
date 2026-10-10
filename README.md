@@ -2,11 +2,11 @@
 
 Your Craft apps, projects and backups in one desktop workspace.
 
-**Build 3.4 prerelease · `3.4.0-beta.1` · Windows, Linux and macOS**
+**Build 3.4 beta 2 · `3.4.0-beta.2` · Windows, Linux and macOS**
 
 [Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases) · [Build 3.4 notes](RELEASE_NOTES_3.4.md) · [Build from source](ArtCraftLauncher-Source/README.md)
 
-Build 3.4 is a **draft prerelease** for review, with all six installable packages built. Draft downloads are available to repository maintainers; public downloads remain under Releases until it is published.
+Build 3.4 beta 2 adds direct Google Drive sync, Local NAS backups, matching workspace folders and an updated Cloud interface. Get the six platform packages from the [prerelease downloads](https://github.com/ZifuM/Craft-apps-launcher-installer/releases/tag/v3.4.0-beta.2). Prereleases are optional and do not replace the latest stable release.
 
 ## Install
 
@@ -44,7 +44,7 @@ On first launch, choose your language and project folder. Use **All Apps** to in
 - **Workspaces:** shortcuts for installed apps and their project libraries.
 - **Appearance:** V2 light and dark modes, with Legacy available after a restart.
 - **Desktop comfort:** remembered window placement, themed startup animations and optional subtle transitions.
-- **Cloud backups:** versioned copies and restore through your own sync folders, in **Settings → Cloud**.
+- **Cloud backups:** direct Google Drive uploads or backups to a connected Local NAS share, with matching app/project/asset folders, saved versions, progress and completion notifications. Access Cloud from the top-right icon. Dropbox and OneDrive are not available yet.
 
 ## Screenshot
 
@@ -52,7 +52,7 @@ On first launch, choose your language and project folder. Use **All Apps** to in
 
 *Windows shown. The interface is shared across Windows, Linux and macOS.*
 
-Cloud and plugin integration are experimental; Assets is a placeholder. Copying to a sync folder does not confirm cloud upload—your provider's client handles syncing.
+Cloud and plugin integration are experimental. Existing local assets can be selected for backup; the separate workspace asset manager remains a placeholder. Google sign-in is subject to the configured Google project's testing/publishing status, and NAS shares must already be connected through the operating system. See [Cloud setup](docs/CLOUD_SETUP.md) for connection instructions. Keep Master Suite running until syncing finishes.
 
 [Linux details](docs/LINUX.md) · [macOS details](docs/MACOS.md) · [Cloud setup](docs/CLOUD_SETUP.md) · [License](ArtCraftLauncher-Source/LICENSE)
 

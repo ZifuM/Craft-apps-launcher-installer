@@ -1,5 +1,6 @@
 //! V2: Creative Cloud-style app catalog and workspace shell, with paired light/dark palettes.
 use super::*;
+mod cloud_screen;
 
 fn mask_banner_corners(painter: &egui::Painter, rect: egui::Rect, background: Color32) {
     let radius = (UI_RADIUS as f32).min(rect.width() * 0.5).min(rect.height() * 0.5);
@@ -62,14 +63,25 @@ fn outline_button(label: &str) -> impl egui::Widget {
 fn more_menu(ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
     let menu = egui::menu::menu_custom_button(
         ui,
-        egui::Button::new(RichText::new("…").size(18.0))
+        egui::Button::new("")
             .frame(false)
+            .corner_radius(UI_RADIUS)
             .min_size(Vec2::new(26.0, 30.0)),
         |ui| {
             windows_ui::menus::style(ui);
             contents(ui);
         },
     );
+    // Draw the icon around the control's center rather than a text baseline.
+    // All V2 app, project and backup action menus share this button.
+    let color = ui.style().interact(&menu.response).fg_stroke.color;
+    for x in [-5.0, 0.0, 5.0] {
+        ui.painter().circle_filled(
+            menu.response.rect.center() + Vec2::new(x, 0.0),
+            1.25,
+            color,
+        );
+    }
     menu.response.widget_info(|| {
         egui::WidgetInfo::labeled(
             egui::WidgetType::Button,
@@ -386,7 +398,7 @@ fn accent() -> Color32 {
         Color32::from_rgb(92, 170, 255)
     }
 }
-fn chrome() -> Color32 {
+pub(crate) fn chrome() -> Color32 {
     neutral(34, 255)
 }
 fn field() -> Color32 {
@@ -711,10 +723,6 @@ impl Launcher {
             self.page = Page::Apps;
             self.settings_open = true;
         }
-        if self.page == Page::Cloud {
-            self.page = Page::Apps;
-            self.open_cloud();
-        }
         egui::TopBottomPanel::top("v2-navigation")
             .frame(
                 egui::Frame::new()
@@ -739,13 +747,13 @@ impl Launcher {
                     let original = match self.page {
                         Page::Projects | Page::Home => self.search.clone(),
                         Page::App(id) => self.workspace_search.get(id).cloned().unwrap_or_default(),
-                        Page::Cloud => self.cloud.search.clone(),
+                        Page::Cloud => self.direct_cloud.search.clone(),
                         _ => self.manager_search.clone(),
                     };
                     let mut query = original.clone();
                     let hint = match self.page {
                         Page::Projects | Page::Home | Page::App(_) => "Search projects",
-                        Page::Cloud => "Search backup files",
+                        Page::Cloud => "Search cloud files",
                         _ => "Search apps",
                     };
                     search(ui, "v2-global-search", &mut query, hint, search_width);
@@ -760,8 +768,7 @@ impl Launcher {
                                 self.workspace_tabs.insert(id.into(), 0);
                             }
                             Page::Cloud => {
-                                self.cloud.search = query;
-                                self.cloud.tab = 0;
+                                self.direct_cloud.search = query;
                             }
                             _ => {
                                 self.manager_search = query;
@@ -814,14 +821,14 @@ impl Launcher {
                 });
         }
         egui::SidePanel::left("v2-sidebar")
-            .exact_width(if self.sidebar_collapsed { 58.0 } else { 218.0 })
+            .exact_width(if self.sidebar_collapsed && self.page != Page::Cloud { 58.0 } else { 218.0 })
             .resizable(false)
             .frame(
                 egui::Frame::new()
                     .fill(chrome())
                     .inner_margin(egui::Margin::symmetric(10, 16)),
             )
-            .show(ctx, |ui| self.v2_sidebar(ui));
+            .show(ctx, |ui| if self.page == Page::Cloud { self.cloud_sidebar(ui); } else { self.v2_sidebar(ui); });
         egui::TopBottomPanel::top("v2-content-bar")
             .frame(
                 egui::Frame::new()
@@ -889,7 +896,7 @@ impl Launcher {
                     Page::Apps | Page::YourApps => self.v2_apps(ui),
                     Page::Projects => self.v2_projects(ui, None),
                     Page::App(id) => self.v2_workspace(ui, id),
-                    Page::Cloud => self.v2_apps(ui),
+                    Page::Cloud => self.cloud_screen(ui),
                     Page::Settings => self.v2_apps(ui),
                 }
             });
@@ -948,19 +955,6 @@ impl Launcher {
                     }
                     sidebar_divider(ui);
                 }
-                if sidebar_item(
-                    ui,
-                    "Settings",
-                    self.settings_open,
-                    Glyph::Settings,
-                    compact,
-                    None,
-                )
-                .clicked()
-                {
-                    self.settings_open = true;
-                }
-                sidebar_divider(ui);
                 {
                     sidebar_caption(ui, "CATEGORIES", compact);
                     let manager = matches!(self.page, Page::Apps | Page::YourApps);
@@ -1805,7 +1799,7 @@ impl Launcher {
             return;
         }
         let available = ctx.screen_rect().size() - Vec2::splat(32.0);
-        let size = Vec2::new(available.x.min(1040.0), available.y.min(600.0));
+        let size = Vec2::new(available.x.min(1040.0), available.y.min(700.0));
         let modal = egui::Modal::new(egui::Id::new("v2-settings-dialog"))
             .area(
                 egui::Modal::default_area(egui::Id::new("v2-settings-dialog"))
@@ -1830,6 +1824,7 @@ impl Launcher {
     }
 
     fn v2_settings(&mut self, ui: &mut egui::Ui, size: Vec2) {
+        if self.settings_tab == 8 { self.settings_tab = 3; }
         let before = serde_json::to_string(&self.prefs).unwrap_or_default();
         let previous_startup = self.prefs.start_with_windows;
         let (bounds, _) = ui.allocate_exact_size(size, egui::Sense::hover());
@@ -1898,7 +1893,6 @@ impl Launcher {
                     (1, "Apps"),
                     (6, "Language"),
                     (7, "Notifications"),
-                    (8, "Cloud"),
                     (0, "Appearance"),
                     (5, "Themes"),
                     (2, "Projects"),
@@ -2011,7 +2005,7 @@ impl Launcher {
                         ui.horizontal_wrapped(|ui| {
                             if ui.add_enabled(!self.suite_update_busy, outline_button("Check for updates")).clicked() { self.check_suite_update(true); }
                             ui.hyperlink_to(tr("Release history"), "https://github.com/ZifuM/Craft-apps-launcher-installer/releases");
-                            if self.suite_update_ready.is_some() && !self.prefs.automatic_suite_updates && ui.add(primary_button("Install and restart")).clicked() {
+                            if self.suite_update_ready.is_some() && !self.prefs.automatic_suite_updates && ui.add_enabled(!self.direct_cloud.busy, primary_button("Install and restart")).clicked() {
                                 if let Some((update, _)) = self.suite_update_ready.take() {
                                     save_preferences(&self.prefs);
                                     match suite_update::launch(&update) { Ok(()) => self.tray_quit_requested = true, Err(error) => self.suite_update_status = error }
@@ -2050,7 +2044,6 @@ impl Launcher {
                 7 => preferences_section(ui, "App updates", "Show a notification when updates are available for your apps.", |ui| {
                     preferences_toggle(ui, &mut self.prefs.update_notifications, "Show update notifications");
                 }),
-                8 => self.v2_cloud_settings(ui),
                 _ => {
                     preferences_section(ui, "ArtCraft Master Suite", "", |ui| {
                         line(ui, "Version", VERSION); line(ui, "Platform", &platform::label());
@@ -2093,337 +2086,6 @@ impl Launcher {
             if !self.prefs.update_notifications && self.persistent_toast.is_some() {
                 self.toast = None;
                 self.persistent_toast = None;
-            }
-        }
-    }
-
-    fn v2_cloud_settings(&mut self, ui: &mut egui::Ui) {
-        preferences_section(
-            ui,
-            "Cloud backup",
-            "Keep versioned project copies in your own sync folders. Cloud features are experimental.",
-            |ui| {
-                let automatic = self.cloud.settings.automatic;
-                ui.add_enabled_ui(!self.cloud.busy, |ui| {
-                    preferences_toggle(
-                        ui,
-                        &mut self.cloud.settings.automatic,
-                        "Back up selected projects automatically",
-                    );
-                });
-                if automatic != self.cloud.settings.automatic {
-                    self.cloud.save();
-                }
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(
-                        RichText::new(tr(format!(
-                            "{} connected sync folders",
-                            self.cloud.settings.folders.len()
-                        )))
-                        .color(muted()),
-                    );
-                    if ui.add(outline_button("Manage sync folders")).clicked() {
-                        self.cloud.tab = 3;
-                    }
-                });
-            },
-        );
-        preferences_section(ui, "", "", |ui| self.v2_cloud_controls(ui));
-    }
-
-    fn v2_cloud_controls(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            for (i, label) in [
-                (0, "Project files"),
-                (1, "Saved versions"),
-                (3, "Sync folders"),
-                (2, "Assets"),
-            ] {
-                if tab(ui, self.cloud.tab == i, label).clicked() {
-                    self.cloud.tab = i;
-                }
-            }
-        });
-        ui.separator();
-        ui.add_space(12.0);
-        if self.cloud.busy {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(tr(&self.cloud.message));
-                if ui.button(tr("Cancel")).clicked() {
-                    self.cloud.cancel();
-                }
-            });
-        } else if !self.cloud.message.is_empty() {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(
-                    RichText::new(tr(&self.cloud.message))
-                        .small()
-                        .color(muted()),
-                );
-                if ui.small_button(tr("Dismiss")).clicked() {
-                    self.cloud.message.clear();
-                }
-            });
-        }
-        let progress = transition_progress(
-            ui.ctx(),
-            egui::Id::new("v2-cloud-transition"),
-            egui::Id::new(self.cloud.tab),
-            self.prefs.reduce_motion,
-        );
-        ui.scope(|ui| {
-        ui.multiply_opacity(0.35 + 0.65 * progress);
-        match self.cloud.tab {
-            3 => {
-                for provider in cloud::PROVIDERS {
-                    ui.push_id(provider.name(), |ui| {
-                        ui.label(RichText::new(provider.name()).strong());
-                        if let Some(folder) = self.cloud.settings.folders.get(&provider).cloned() {
-                            ui.add(egui::Label::new(folder.path.display().to_string()).wrap());
-                            let mut selected = self.cloud.settings.targets.contains(&provider);
-                            if ui
-                                .add_enabled(
-                                    !self.cloud.busy,
-                                    |ui: &mut egui::Ui| preferences_toggle(ui, &mut selected, "Use for backups"),
-                                )
-                                .changed()
-                            {
-                                if selected {
-                                    self.cloud.settings.targets.push(provider);
-                                } else {
-                                    self.cloud.settings.targets.retain(|p| *p != provider);
-                                }
-                                self.cloud.save();
-                            }
-                            ui.horizontal_wrapped(|ui| {
-                                if ui.button(tr("Open folder")).clicked() {
-                                    self.cloud.open_folder(provider);
-                                }
-                                if ui
-                                    .add_enabled(
-                                        !self.cloud.busy,
-                                        egui::Button::new(tr("Change folder")),
-                                    )
-                                    .clicked()
-                                {
-                                    self.cloud.connect(provider);
-                                }
-                                if ui
-                                    .add_enabled(
-                                        !self.cloud.busy,
-                                        egui::Button::new(tr("Disconnect")),
-                                    )
-                                    .clicked()
-                                {
-                                    self.cloud.disconnect_provider = Some(provider);
-                                }
-                            });
-                        } else {
-                            ui.horizontal_wrapped(|ui| {
-                                if ui
-                                    .add_enabled(
-                                        !self.cloud.busy,
-                                        egui::Button::new(tr("Choose sync folder")),
-                                    )
-                                    .clicked()
-                                {
-                                    self.cloud.connect(provider);
-                                }
-                                if ui.button(tr("Open desktop app")).clicked() {
-                                    if let Err(error) = provider.open_desktop() {
-                                        self.cloud.message = error;
-                                    }
-                                }
-                                ui.hyperlink_to(tr("Download desktop app"), provider.website());
-                            });
-                        }
-                        ui.add_space(12.0);
-                        ui.separator();
-                        ui.add_space(12.0);
-                    });
-                }
-                ui.label(RichText::new(tr("Your sync provider handles uploading. Master Suite stores versioned copies in the folders you select.")).color(muted()));
-            }
-            1 => {
-                if ui
-                    .add_enabled(
-                        !self.cloud.busy && !self.cloud.settings.folders.is_empty(),
-                        egui::Button::new(tr("Refresh saved versions")),
-                    )
-                    .clicked()
-                {
-                    self.cloud.refresh();
-                }
-                ui.label(
-                    RichText::new(tr("Restore an earlier version as a separate file."))
-                        .color(muted()),
-                );
-                ui.add_space(12.0);
-                let mut history = self.cloud.history.clone();
-                history.sort_by(|a, b| b.modified.cmp(&a.modified));
-                if history.is_empty() {
-                    ui.label(tr("No saved versions to show."));
-                }
-                for remote in history {
-                    ui.push_id((&remote.id, remote.provider), |ui| {
-                        ui.horizontal(|ui| {
-                            let title_width = (ui.available_width() - 126.0).max(80.0);
-                            ui.allocate_ui_with_layout(Vec2::new(title_width, 32.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                                ui.set_min_width(title_width);
-                                ui.add(egui::Label::new(RichText::new(&remote.name).strong()).truncate());
-                            });
-                            if ui
-                                .add_enabled(
-                                    !self.cloud.busy,
-                                    egui::Button::new(tr("Restore copy")),
-                                )
-                                .clicked()
-                            {
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .set_file_name(remote.original_name())
-                                    .save_file()
-                                {
-                                    self.cloud.restore(remote.clone(), path);
-                                }
-                            }
-                        });
-                        ui.label(
-                            RichText::new(format!(
-                                "{} · {} · {}",
-                                remote.provider.name(),
-                                remote.modified,
-                                format_file_size(remote.bytes)
-                            ))
-                            .small()
-                            .color(muted()),
-                        );
-                        ui.separator();
-                    });
-                }
-            }
-            2 => {
-                ui.label(tr("Asset backups are not available yet."));
-            }
-            _ => {
-                ui.horizontal_wrapped(|ui| {
-                    search(
-                        ui,
-                        "v2-backup-search",
-                        &mut self.cloud.search,
-                        "Search files",
-                        240.0,
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.cloud.busy
-                                && !self.cloud.settings.selected.is_empty()
-                                && !self.cloud.settings.targets.is_empty(),
-                            primary_button("Back up now"),
-                        )
-                        .clicked()
-                    {
-                        self.cloud.sync(&self.projects);
-                    }
-                });
-                ui.horizontal_wrapped(|ui| {
-                    for (i, label) in ["All files", "Selected", "Needs attention"]
-                        .iter()
-                        .enumerate()
-                    {
-                        ui.selectable_value(&mut self.cloud.view_filter, i as u8, tr(*label));
-                    }
-                });
-                let query = self.cloud.search.trim().to_lowercase();
-                let projects: Vec<_> = self
-                    .projects
-                    .iter()
-                    .filter(|p| p.path.to_string_lossy().to_lowercase().contains(&query))
-                    .filter(|p| match self.cloud.view_filter {
-                        1 => self.cloud.settings.selected.contains(&p.path),
-                        2 => matches!(
-                            self.cloud.status(p),
-                            "Needs attention" | "Pending copy" | "Not connected"
-                        ),
-                        _ => true,
-                    })
-                    .cloned()
-                    .collect();
-                let mut all = !projects.is_empty()
-                    && projects
-                        .iter()
-                        .all(|p| self.cloud.settings.selected.contains(&p.path));
-                if ui
-                    .add_enabled(
-                        !self.cloud.busy,
-                        egui::Checkbox::new(&mut all, tr("Select all visible files")),
-                    )
-                    .changed()
-                {
-                    for p in &projects {
-                        self.cloud.settings.selected.retain(|path| path != &p.path);
-                        if all {
-                            self.cloud.settings.selected.push(p.path.clone());
-                        }
-                    }
-                    self.cloud.save();
-                }
-                ui.separator();
-                if projects.is_empty() {
-                    ui.label(tr("No project files to show."));
-                }
-                for p in projects {
-                    ui.push_id(&p.path, |ui| {
-                        let mut selected = self.cloud.settings.selected.contains(&p.path);
-                        ui.horizontal(|ui| {
-                            let content_width = (ui.available_width() - 44.0).max(120.0);
-                            ui.allocate_ui_with_layout(Vec2::new(content_width, 54.0), egui::Layout::top_down(egui::Align::Min), |ui| {
-                            ui.set_width(content_width);
-                            ui.spacing_mut().item_spacing.y = 4.0;
-                            if ui
-                                .add_enabled(
-                                    !self.cloud.busy,
-                                    egui::Checkbox::new(&mut selected, &p.title),
-                                )
-                                .changed()
-                            {
-                                self.cloud.settings.selected.retain(|path| path != &p.path);
-                                if selected {
-                                    self.cloud.settings.selected.push(p.path.clone());
-                                }
-                                self.cloud.save();
-                            }
-                            let summary = self.cloud.backup_status(&p);
-                            ui.add(egui::Label::new(RichText::new(format!(
-                                "{} · {} · {}", p.app.name, format_file_size(p.size_bytes), tr(summary.state.label())
-                            )).small().color(muted())).truncate())
-                            .on_hover_text(summary.tooltip);
-                            });
-                            more_menu(ui, |ui| self.project_menu_items(ui, &p));
-                        });
-                        ui.separator();
-                    });
-                }
-            }
-        }
-        });
-        if let Some(provider) = self.cloud.disconnect_provider {
-            let mut confirm = false;
-            let mut cancel = false;
-            let modal = egui::Modal::new(egui::Id::new("v2-disconnect")).show(ui.ctx(), |ui| {
-                ui.set_width(420.0);
-                ui.heading(tr(format!("Disconnect {}?", provider.name())));
-                ui.label(tr("Existing backup files will be kept."));
-                ui.horizontal(|ui| {
-                    confirm = ui.button(tr("Disconnect")).clicked();
-                    cancel = ui.button(tr("Cancel")).clicked();
-                });
-            });
-            if confirm {
-                self.cloud.disconnect(provider);
-                self.cloud.disconnect_provider = None;
-            } else if cancel || modal.should_close() {
-                self.cloud.disconnect_provider = None;
             }
         }
     }
@@ -2821,7 +2483,7 @@ impl Launcher {
             ui.add_space(18.0);
             ui.label(
                 RichText::new(tr(
-                    "Cloud backup is optional and can be connected from Settings → Cloud → Sync folders.",
+                    "Cloud backup is optional. Connect Google Drive using the cloud icon at the top right.",
                 ))
                 .color(muted()),
             );
@@ -2834,9 +2496,9 @@ impl Launcher {
         }
     }
 
-    pub(crate) fn v2_notification(&mut self, ctx: &egui::Context, message: &str) {
+    pub(crate) fn v2_notification(&mut self, ctx: &egui::Context, message: &str, cloud_notice_height: f32) {
         egui::Area::new(egui::Id::new("v2-message"))
-            .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-14.0, -14.0))
+            .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-14.0, -14.0 - cloud_notice_height))
             .order(egui::Order::Foreground)
             .show(ctx, |ui| {
                 egui::Frame::new()

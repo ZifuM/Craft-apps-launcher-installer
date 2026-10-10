@@ -2,6 +2,8 @@
 
 #[cfg(target_os = "windows")]
 mod windows_tray;
+#[cfg(target_os = "windows")]
+mod windows_chrome;
 mod windows_ui;
 mod window_state;
 mod project_move;
@@ -29,6 +31,10 @@ mod plugins;
 mod plugin_ui;
 mod workspace_bridge;
 mod cloud;
+mod cloud_direct;
+mod google_drive;
+mod cloud_layout;
+mod nas_backup;
 mod platform;
 #[cfg(target_os="linux")]
 mod linux_tray;
@@ -344,7 +350,7 @@ enum Event {
     Progress(String, String),
     Logo(String, egui::TextureHandle, Color32),
     Done(String, Result<String, String>),
-    Scan(Vec<Project>),
+    Scan(Vec<Project>, cloud_layout::Library),
 }
 
 struct Launcher {
@@ -355,6 +361,7 @@ struct Launcher {
     onboarding_step: usize,
     onboarding_error: Option<String>,
     cloud: cloud::Cloud,
+    direct_cloud: cloud_direct::DirectCloud,
     #[cfg(target_os = "windows")]
     tray: Option<windows_tray::Tray>,
     #[cfg(target_os="linux")]
@@ -558,6 +565,7 @@ impl Launcher {
             onboarding_step: 0,
             onboarding_error: None,
             cloud: cloud::Cloud::new(),
+            direct_cloud: cloud_direct::DirectCloud::new(),
             startup_splash_started: Instant::now(),
             startup_splash_initialized: false,
             startup_splash_window_shown: false,
@@ -777,7 +785,9 @@ impl Launcher {
         let tx = self.events_tx.clone();
         let previous: HashMap<_, _> = self.projects.iter().cloned().map(|p| (p.path.clone(), p)).collect();
         thread::spawn(move || {
-            let _ = tx.send(Event::Scan(scan_roots(&roots, &previous)));
+            let projects = scan_roots(&roots, &previous);
+            let cloud = cloud_layout::scan(&roots, &projects);
+            let _ = tx.send(Event::Scan(projects, cloud));
         });
     }
 
@@ -949,12 +959,10 @@ impl Launcher {
     }
 
     fn open_cloud(&mut self) {
-        if self.active_theme == UiTheme::V2 {
-            self.settings_tab = 8;
-            self.settings_open = true;
-        } else {
-            self.page = Page::Cloud;
-        }
+        self.settings_open = false;
+        self.page = Page::Cloud;
+        self.direct_cloud.check_on_open();
+        self.scan_projects();
     }
 
     fn restore_main_window(&mut self, ctx: &egui::Context) {
@@ -1181,7 +1189,7 @@ impl Launcher {
                     }
                     self.toast = Some(error);
                 }
-                Event::Scan(projects) => {
+                Event::Scan(projects, cloud) => {
                     // Refresh textures when saved contents change, not only when paths disappear.
                     self.project_previews.retain(|path, _| {
                         let old = self.projects.iter().find(|p| &p.path == path);
@@ -1189,6 +1197,7 @@ impl Launcher {
                         matches!((old, new), (Some(a), Some(b)) if a.revision == b.revision && match (&a.preview, &b.preview) { (Some(a), Some(b)) => Arc::ptr_eq(a, b), (None, None) => true, _ => false })
                     });
                     self.projects = projects;
+                    self.direct_cloud.library = cloud;
                     self.prefs.scanning = false;
                 }
             }
@@ -1262,7 +1271,6 @@ impl Launcher {
                     self.side_link(ui, Page::YourApps, "Your apps", Some(self.states.values().filter(|s| s.installed.is_some()).count()));
                 }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
-                    self.side_link(ui, Page::Cloud, "Cloud", None);
                     self.side_link(ui, Page::Settings, "Settings", None);
 
                 });
@@ -1900,6 +1908,10 @@ impl eframe::App for Launcher {
             self.applied_light_mode = Some(self.prefs.light_mode);
             self.applied_reduce_motion = Some(self.prefs.reduce_motion);
         }
+        #[cfg(target_os = "windows")]
+        if self.active_theme == UiTheme::V2 {
+            windows_chrome::sync(ctx, frame, ui_v2::chrome(), ui_v2::foreground(), !light_theme(), self.startup_splash_finished);
+        }
         if self.startup_splash_finished { self.window_state.observe(ctx); }
         #[cfg(target_os = "windows")]
         {
@@ -1983,7 +1995,8 @@ impl eframe::App for Launcher {
         let suite_can_restart = self.prefs.onboarding_complete && self.startup_splash_finished && self.pending_launch.is_none()
             && self.show_project_rename.is_none() && self.show_project_delete.is_none() && self.show_remove.is_none()
             && !self.prefs.scanning && self.states.values().all(|state| state.busy.is_none());
-        let suite_can_restart = suite_can_restart && self.properties.is_none() && !self.settings_open;
+        let suite_can_restart = suite_can_restart && self.properties.is_none() && !self.settings_open
+            && !self.direct_cloud.busy && !self.folder_move.as_ref().is_some_and(|operation| operation.running());
         if let Some((_, ready_at)) = self.suite_update_ready.as_mut() {
             if !suite_can_restart || !self.prefs.automatic_suite_updates { *ready_at = Instant::now(); }
         }
@@ -2025,7 +2038,7 @@ impl eframe::App for Launcher {
             ui.painter().rect_filled(beta, UI_RADIUS, mix_color(panel(), ACCENT, 0.18));
             ui.painter().text(beta.center(), egui::Align2::CENTER_CENTER, tr("Beta"), egui::FontId::proportional(text_size(10.0)), readable_app_color(ACCENT));
             let controls_width = 138.0;
-            let drag_rect = egui::Rect::from_min_max(bar.left_top(), egui::pos2(bar.right() - controls_width, bar.bottom()));
+            let drag_rect = egui::Rect::from_min_max(bar.left_top(), egui::pos2(bar.right() - controls_width - 38.0, bar.bottom()));
             let drag = ui.interact(drag_rect, egui::Id::new("custom-titlebar-drag"), egui::Sense::click_and_drag());
             if drag.drag_started() {
                 #[cfg(target_os = "windows")]
@@ -2035,6 +2048,11 @@ impl eframe::App for Launcher {
             }
             if drag.double_clicked() { ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!maximized)); }
             let start = bar.right() - controls_width;
+            let cloud_rect = egui::Rect::from_min_size(egui::pos2(start - 38.0, bar.top()), Vec2::new(38.0, 34.0));
+            let cloud_button = ui.interact(cloud_rect, egui::Id::new("titlebar-cloud"), egui::Sense::click());
+            cloud_ui::paint_cloud(ui.painter(), cloud_rect, foreground());
+            cloud_button.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tr("Cloud")));
+            if cloud_button.on_hover_text(tr("Cloud")).clicked() { self.open_cloud(); }
             for (idx, command) in [0_u8, 1_u8, 2_u8].into_iter().enumerate() {
                 let rect = egui::Rect::from_min_size(egui::pos2(start + idx as f32 * 46.0, bar.top()), Vec2::new(46.0, 34.0));
                 let response = ui.interact(rect, egui::Id::new(("window-control", idx)), egui::Sense::click()).on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -2091,7 +2109,11 @@ impl eframe::App for Launcher {
         if self.active_theme == UiTheme::V2 {
             self.v2_ui(ctx);
         } else {
-        if self.prefs.classic_sidebar { self.classic_sidebar(ctx); } else { self.modern_sidebar(ctx); }
+        if self.page == Page::Cloud {
+            egui::SidePanel::left("legacy-cloud-sidebar").exact_width(218.0).resizable(false)
+                .frame(egui::Frame::new().fill(panel()).inner_margin(egui::Margin::symmetric(10, 16)))
+                .show(ctx, |ui| self.cloud_sidebar(ui));
+        } else if self.prefs.classic_sidebar { self.classic_sidebar(ctx); } else { self.modern_sidebar(ctx); }
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
@@ -2111,7 +2133,7 @@ impl eframe::App for Launcher {
                         let ui=&mut content_ui;
                         match self.page {
                             Page::Home => self.home(ui),
-                            Page::Cloud => { page_scroll(ui, "cloud-page", |ui| self.cloud_page(ui)); },
+                            Page::Cloud => self.cloud_screen(ui),
                             Page::Apps => self.apps_page(ui),
                             Page::YourApps => self.your_apps_page(ui),
                             Page::Projects => self.projects_page(ui),
@@ -2128,7 +2150,13 @@ impl eframe::App for Launcher {
             });
         }
         self.plugins.tick();
-        self.cloud.tick(&self.projects);
+        // Retain read-only status for existing folder backups; new sync uses the Drive API.
+        self.cloud.monitor.tick(&self.cloud.settings);
+        let allow_automatic_sync = !self.prefs.scanning && !self.folder_move.as_ref().is_some_and(|operation| operation.running());
+        if allow_automatic_sync && self.direct_cloud.settings.automatic && !self.direct_cloud.busy
+            && self.last_project_scan.elapsed() >= Duration::from_secs(120) { self.scan_projects(); }
+        let allow_automatic_sync = allow_automatic_sync && !self.prefs.scanning;
+        self.direct_cloud.tick(allow_automatic_sync, self.page == Page::Cloud);
         if !self.prefs.onboarding_complete {
             self.onboarding(ctx);
             ctx.request_repaint_after(Duration::from_millis(200));
@@ -2138,6 +2166,7 @@ impl eframe::App for Launcher {
         self.properties_dialog(ctx);
         self.project_dialogs(ctx);
         self.folder_move_dialog(ctx);
+        let cloud_notice_height = self.cloud_notifications(ctx);
         if self.toast != self.toast_last_message {
             self.toast_last_message = self.toast.clone();
             self.toast_started = self.toast.as_ref().map(|_| Instant::now());
@@ -2150,14 +2179,14 @@ impl eframe::App for Launcher {
             self.persistent_toast = None;
         }
         if let Some(message) = self.toast.clone() {
-            if self.active_theme == UiTheme::V2 { self.v2_notification(ctx, &message); } else {
+            if self.active_theme == UiTheme::V2 { self.v2_notification(ctx, &message, cloud_notice_height); } else {
             let is_update = toast_is_persistent;
             let is_error = message.to_lowercase().contains("could not") || message.to_lowercase().contains("failed") || message.to_lowercase().contains("error");
             let accent = if is_update { ACCENT } else if is_error { theme_rgb(235, 105, 112) } else { theme_rgb(102, 205, 151) };
             let title = if is_update { "Updates available" } else if is_error { "Something needs attention" } else { "ArtCraft Master Suite" };
             egui::Area::new(egui::Id::new("toast-notification"))
                 .order(egui::Order::Foreground)
-                .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-22.0, -22.0))
+                .anchor(egui::Align2::RIGHT_BOTTOM, Vec2::new(-22.0, -22.0 - cloud_notice_height))
                 .show(ctx, |ui| {
                     egui::Frame::new()
                         .fill(theme_rgb(31, 33, 40))
@@ -2666,7 +2695,7 @@ fn scan_roots(roots: &[PathBuf], previous: &HashMap<PathBuf, Project>) -> Vec<Pr
             .into_iter()
             .filter_entry(|entry| {
                 let name = entry.file_name().to_string_lossy().to_lowercase();
-                let managed_resource = entry.path().join(".artcraft-backups").is_file() || ["plugins", "assets", "exports"].contains(&name.as_str())
+                let managed_resource = entry.path().join(".artcraft-backups").is_file() || entry.path().join(".artcraft-nas.json").is_file() || ["plugins", "assets", "exports"].contains(&name.as_str())
                     && entry.path().parent().is_some_and(|parent| parent.join(".artcraft-suite.json").is_file());
                 !entry.file_type().is_dir()
                     || (!managed_resource && !name.starts_with('.')

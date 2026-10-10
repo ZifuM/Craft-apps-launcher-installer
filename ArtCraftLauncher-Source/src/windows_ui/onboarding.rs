@@ -97,36 +97,9 @@ impl Launcher {
                             ui.label(RichText::new(tr("Login startup and minimize-to-tray are off by default.")).color(muted()));
                         }
                         _ => {
-                            ui.label(tr("Use your provider’s desktop app to sign in, then choose its sync folder. This step is optional."));
+                            ui.label(tr("Cloud backup is optional. After setup, use the cloud icon at the top right to connect Google Drive and choose files to sync."));
                             ui.add_space(14.0);
-                            for provider in cloud::PROVIDERS {
-                                egui::Frame::new().fill(panel()).corner_radius(UI_RADIUS).inner_margin(12).show(ui, |ui| {
-                                    ui.set_width(ui.available_width());
-                                    ui.horizontal(|ui| {
-                                        ui.vertical(|ui| {
-                                            ui.label(RichText::new(provider.name()).strong());
-                                            if let Some(account) = self.cloud.settings.folders.get(&provider) {
-                                                ui.label(RichText::new(account.path.display().to_string()).size(text_size(12.0)).color(muted()));
-                                            } else {
-                                                ui.label(RichText::new(tr("Select the folder synced by the desktop app")).size(text_size(12.0)).color(muted()));
-                                            }
-                                        });
-                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                            let connected = self.cloud.settings.folders.contains_key(&provider);
-                                            if ui.add_enabled_ui(!self.cloud.busy && !connected, |ui| secondary_button(ui, if connected {"Folder selected"} else {"Choose folder"})).inner.clicked() {
-                                                self.cloud.connect(provider);
-                                            }
-                                        });
-                                    });
-                                });
-                                ui.add_space(8.0);
-                            }
-                            if self.cloud.busy {
-                                ui.horizontal(|ui| {ui.spinner(); ui.label(tr("Preparing backup folder…")); if secondary_button(ui,"Cancel").clicked() {self.cloud.cancel();}});
-                            }
-                            if !self.cloud.message.is_empty() { ui.label(RichText::new(tr(&self.cloud.message)).size(text_size(12.0)).color(muted())); }
-                            ui.add_space(8.0);
-                            ui.label(RichText::new(tr("Selecting a folder does not copy any projects. Choose files later in Cloud.")).size(text_size(12.0)).color(muted()));
+                            ui.label(RichText::new(tr("Dropbox and OneDrive are not available yet.")).color(muted()));
                         }
                     }
                 });

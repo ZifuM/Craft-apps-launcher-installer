@@ -8,7 +8,7 @@ The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and 
 
 ## Build status
 
-Build `v3.4.0-beta.1` compiled successfully for Intel and Apple Silicon. The universal app passed architecture and code-signature checks, the DMG passed its integrity check, and the downloaded package matches the release checksum. It is attached to the unpublished Build 3.4 draft prerelease. Native desktop behavior has not been manually validated for this build.
+Build `v3.4.0-beta.2` includes the updated Cloud screen, direct Google Drive sync, Local NAS backups and matching workspace folders. The release workflow compiles both Intel and Apple Silicon targets, combines them into one application, applies an ad-hoc signature and creates the universal DMG. Architecture, signature integrity and disk-image checks are part of packaging. Native desktop behavior has not been manually validated for this build.
 
 ## Install
 
@@ -28,7 +28,7 @@ The compact screens, menus, text-size settings and translation catalog are share
 - The menu-bar icon supports opening and quitting Master Suite. Minimize-to-menu-bar and login startup remain off by default.
 - Login startup uses a per-user LaunchAgent. Enable it only after moving the suite out of its disk image and into its installed location.
 - Existing PhotoCraft, VectorCraft and EffectCraft plugin adapters use their upstream Mac Application Support folders. Plugin integration remains experimental.
-- Cloud backups continue to use folders managed by installed Google Drive, Dropbox or OneDrive clients. Local backup completion does not confirm provider upload completion.
+- Google Drive uploads use browser sign-in and Keychain credential storage, and Local NAS backups use a share mounted in Finder. Both preserve the app's Projects/Assets/Exports/Plugins folders. The universal release build includes the configured Google Desktop OAuth settings for both CPU architectures. Dropbox and OneDrive are not available yet; see [Cloud setup](CLOUD_SETUP.md).
 
 ## Updates
 

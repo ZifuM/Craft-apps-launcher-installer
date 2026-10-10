@@ -10,3 +10,6 @@ dist/
 /ArtCraftMasterSuite-*.zip
 /ArtCraftMasterSuite-*-Source.tar.gz
 /SHA256SUMS.txt
+# Local Google desktop credentials and authentication data
+google-desktop-client.json
+client_secret*.json

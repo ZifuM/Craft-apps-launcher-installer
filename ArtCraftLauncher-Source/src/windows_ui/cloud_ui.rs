@@ -27,7 +27,7 @@ pub(super) fn paint_cloud(p: &egui::Painter, r: egui::Rect, color: Color32) {
     ));
 }
 // Logos are bundled assets, decoded once per egui context; no network requests at runtime.
-fn paint_provider_icon(ui: &egui::Ui, rect: egui::Rect, provider: cloud::Provider) {
+pub(crate) fn paint_provider_icon(ui: &egui::Ui, rect: egui::Rect, provider: cloud::Provider) {
     let key = egui::Id::new(("cloud-provider-logo", provider));
     let cached = ui
         .ctx()
@@ -170,12 +170,18 @@ fn backup_status_at(ui: &mut egui::Ui, rect: egui::Rect, summary: &Summary) {
 }
 impl Launcher {
     pub(super) fn project_cloud_badge(&mut self, ui: &mut egui::Ui, project: &Project) {
-        let summary = self.cloud.backup_status(project);
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::click());
-        paint_backup(ui.painter(), rect, summary.state);
-        if response.on_hover_text(summary.tooltip).clicked() {
-            self.open_cloud();
+        let status = self.direct_cloud.status(project);
+        if status != "Local only" {
+            let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
+            let state = match status { "Uploaded" => State::Confirmed, "Needs attention" => State::Error, _ => State::Pending };
+            paint_backup(ui.painter(), rect, state);
+            response.on_hover_text(self.direct_cloud.errors.get(&project.path).cloned().unwrap_or_else(|| tr(status)));
+            return;
         }
+        let summary = self.cloud.backup_status(project);
+        let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
+        paint_backup(ui.painter(), rect, summary.state);
+        response.on_hover_text(summary.tooltip);
     }
     pub(super) fn cloud_page(&mut self, ui: &mut egui::Ui) {
         toolbar::style(ui);

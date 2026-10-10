@@ -6,7 +6,9 @@ A native Windows, Linux and macOS home for Storytold’s open-source creative an
 
 ## Build 3.4 prerelease
 
-Version `3.4.0-beta.1` shares V2 light/dark mode, popup Settings and Cloud, remembered window placement, project-folder moves and themed startup animations across all desktop targets. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+Version `3.4.0-beta.2` shares V2 light/dark mode, popup Settings, a dedicated Cloud screen, remembered window placement, project-folder moves and themed startup animations across all desktop targets. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+
+Cloud is opened only by the top-right cloud icon. Google Drive uses browser sign-in and direct uploads. Local NAS backups use a share connected through the operating system. Both preserve app folders and nested Projects/Assets/Exports/Plugins paths, with saved versions and progress notifications. Dropbox and OneDrive are not available yet. See [Cloud setup](../docs/CLOUD_SETUP.md) for connection instructions and credential storage. All release packages are built from the same version tag on native Windows, Linux and macOS runners.
 
 The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `windows_backup` filenames now contain shared code. Native operations remain behind target-specific guards. Unused duplicate views and saved source backups have been removed; Git history retains them.
 
@@ -69,6 +71,8 @@ The setup executable is written to `target/release/artcraft-setup.exe`. It embed
 Use a native machine/runner matching the target platform. From the repository root, run `bash packaging/linux/build-appimage.sh`, `bash packaging/linux/build-flatpak.sh`, or `bash packaging/macos/build-dmg.sh`. Platform requirements and limitations are in [LINUX.md](../docs/LINUX.md) and [MACOS.md](../docs/MACOS.md).
 
 The release workflow builds all six installers from the matching version tag; see [RELEASING.md](../docs/RELEASING.md).
+
+Release builds receive `ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET` through a GitHub Actions secret for the configured Google Desktop OAuth client. Local builds can set the same build variable or use the matching desktop JSON described in Cloud setup. Never commit credential JSON or user tokens. Flatpak packaging forwards the build variable into its temporary build manifest so its sandboxed Cargo build receives it too. Users' refresh tokens are stored separately in the operating system's credential store.
 
 ## Local data
 
