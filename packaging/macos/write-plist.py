@@ -19,9 +19,9 @@ info = {
     "NSHighResolutionCapable": True,
     "NSSupportsAutomaticGraphicsSwitching": True,
     "NSPrincipalClass": "NSApplication",
-    "NSDocumentsFolderUsageDescription": "Manage projects in the folders you choose.",
+    "NSDocumentsFolderUsageDescription": "Manage projects, assets and presets in the folders you choose.",
     "NSDownloadsFolderUsageDescription": "Install packages and import files you choose.",
-    "NSDesktopFolderUsageDescription": "Manage projects in the folders you choose.",
+    "NSDesktopFolderUsageDescription": "Manage projects, assets and presets in the folders you choose.",
 }
 pathlib.Path(sys.argv[2]).write_bytes(plistlib.dumps(info))
 

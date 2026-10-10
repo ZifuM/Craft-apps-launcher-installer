@@ -356,7 +356,7 @@ impl Launcher {
             self.workspace_tabs.insert(id.into(), tab);
             ui.add_space(12.0);
             match tab {
-                1 => self.workspace_placeholder(ui, &app, false),
+                1 => self.v2_assets(ui, Some(app)),
                 2 => self.plugins_page(ui, &app),
                 _ => self.workspace_projects(ui, &app),
             }
@@ -626,24 +626,6 @@ impl Launcher {
         });
     }
 
-    fn workspace_placeholder(&mut self, ui: &mut egui::Ui, app: &AppInfo, plugins: bool) {
-        app_screens::experimental_banner(ui);
-        egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32,border())).corner_radius(UI_RADIUS).inner_margin(32).show(ui,|ui|{
-            ui.set_width(ui.available_width());
-            let (r,_)=ui.allocate_exact_size(Vec2::splat(56.0),egui::Sense::hover());
-            ui.painter().rect_filled(r,UI_RADIUS,mix_color(panel(),app.tint,0.12));
-            paint_navigation_icon(ui.painter(),r.shrink(16.0),Page::Projects,readable_app_color(app.tint));
-            ui.add_space(16.0);
-            ui.label(RichText::new(tr(if plugins{"Plugin management"}else{"Asset management"})).size(text_size(23.0)).strong());
-            ui.add_space(8.0);
-            ui.label(RichText::new(tr("Coming soon")).size(text_size(12.0)).color(readable_app_color(app.tint)));
-            ui.add_space(12.0);
-            ui.add(egui::Label::new(RichText::new(tr("Asset management is planned for a future release. Importing and organizing assets is not available yet.")).color(muted())).wrap());
-            ui.add_space(24.0);
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui|{for label in ["Your asset library","Collections","Asset details"]{ui.label(RichText::new(tr(label)).size(text_size(13.0)).color(muted()));ui.add_space(20.0);}});
-        });
-    }
 }
 
 /// Cover-cropped app artwork with a transparent left edge and rounded outer corners.

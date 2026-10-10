@@ -1,4 +1,6 @@
 //! V2: Creative Cloud-style app catalog and workspace shell, with paired light/dark palettes.
+mod plugins_screen;
+mod assets_screen;
 use super::*;
 mod cloud_screen;
 
@@ -745,6 +747,12 @@ impl Launcher {
                     .inner_margin(egui::Margin::symmetric(16, 4)),
             )
             .show(ctx, |ui| {
+                let bar = ui.available_rect_before_wrap();
+                let search_width = (bar.width() - 360.0).clamp(120.0, 320.0);
+                let search_rect = egui::Rect::from_min_size(
+                    egui::pos2(bar.center().x - search_width * 0.5, bar.top()),
+                    Vec2::new(search_width, 30.0),
+                );
                 ui.horizontal(|ui| {
                     let logo = ui
                         .add(
@@ -757,9 +765,12 @@ impl Launcher {
                         self.prefs.compact_sidebar = self.sidebar_collapsed;
                         save_preferences(&self.prefs);
                     }
-                    let search_width = (ui.available_width() - 186.0).clamp(140.0, 320.0);
-                    ui.add_space(((ui.available_width() - search_width - 172.0) * 0.5).max(0.0));
+                    ui.set_min_height(30.0);
+                    let asset_search = self.page == Page::Assets || matches!(self.page, Page::App(id) if self.workspace_tabs.get(id) == Some(&1));
+                    let plugin_search = matches!(self.page, Page::App(id) if self.workspace_tabs.get(id) == Some(&2));
                     let original = match self.page {
+                        _ if asset_search => self.assets.search.clone(),
+                        _ if plugin_search => self.plugins.search.clone(),
                         Page::Projects | Page::Home => self.search.clone(),
                         Page::App(id) => self.workspace_search.get(id).cloned().unwrap_or_default(),
                         Page::Cloud => self.direct_cloud.search.clone(),
@@ -767,13 +778,18 @@ impl Launcher {
                     };
                     let mut query = original.clone();
                     let hint = match self.page {
+                        _ if asset_search => "Search assets",
+                        _ if plugin_search => "Search plugins",
                         Page::Projects | Page::Home | Page::App(_) => "Search projects",
                         Page::Cloud => "Search cloud files",
                         _ => "Search apps",
                     };
-                    search(ui, "v2-global-search", &mut query, hint, search_width);
+                    let mut search_ui = ui.new_child(egui::UiBuilder::new().max_rect(search_rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                    search(&mut search_ui, "v2-global-search", &mut query, hint, search_width);
                     if original != query {
                         match self.page {
+                            _ if asset_search => self.assets.search = query,
+                            _ if plugin_search => self.plugins.search = query,
                             Page::Projects | Page::Home => {
                                 self.search = query;
                                 self.page = Page::Projects;
@@ -871,6 +887,7 @@ impl Launcher {
                         }
                         Page::Cloud => "Cloud",
                         Page::Settings => "Preferences",
+                        Page::Assets => "Assets",
                         Page::App(id) => app_by_id(id).map(|a| a.name).unwrap_or("Workspace"),
                     };
                     ui.label(RichText::new(tr(title)).strong().size(text_size(14.0)));
@@ -910,6 +927,7 @@ impl Launcher {
                     Page::Home => self.v2_home(ui),
                     Page::Apps | Page::YourApps => self.v2_apps(ui),
                     Page::Projects => self.v2_projects(ui, None),
+                    Page::Assets => self.v2_assets(ui, None),
                     Page::App(id) => self.v2_workspace(ui, id),
                     Page::Cloud => self.cloud_screen(ui),
                     Page::Settings => self.v2_apps(ui),
@@ -927,6 +945,7 @@ impl Launcher {
                 for (page, label, glyph) in [
                     (Page::Home, "Home", Glyph::Home),
                     (Page::Projects, "Projects", Glyph::Folder),
+                    (Page::Assets, "Assets", Glyph::Camera),
                 ] {
                     if sidebar_item(ui, label, self.page == page, glyph, compact, None).clicked() {
                         self.page = page;
@@ -1443,22 +1462,7 @@ impl Launcher {
         ui.separator();
         ui.add_space(8.0);
         match selected_tab {
-            1 => {
-                scroll(ui, ("v2-assets", id), |ui| {
-                    ui.label(tr("Asset organization is not available yet. You can open this app’s asset folder."));
-                    if ui.button(tr("Open assets folder")).clicked() {
-                        if let Some(root) = &self.prefs.default_project_root {
-                            match workspace_bridge::prepare(root, &app) {
-                                Ok(base) => reveal_project_path(&base.join("Assets"), false),
-                                Err(e) => self.toast = Some(e),
-                            }
-                        } else {
-                            self.settings_open = true;
-                            self.settings_tab = 2;
-                        }
-                    }
-                });
-            }
+            1 => self.v2_assets(ui, Some(app)),
             2 => {
                 scroll(ui, ("v2-plugins", id), |ui| self.v2_plugins(ui, app));
             }
@@ -2101,137 +2105,6 @@ impl Launcher {
             if !self.prefs.update_notifications && self.persistent_toast.is_some() {
                 self.toast = None;
                 self.persistent_toast = None;
-            }
-        }
-    }
-
-    fn v2_plugins(&mut self, ui: &mut egui::Ui, app: AppInfo) {
-        ui.label(tr(
-            "Plugin management is experimental. Close the app before changing plugins.",
-        ));
-        let Some(root) = self.prefs.default_project_root.clone() else {
-            ui.label(tr("Choose a default project folder in Settings first."));
-            return;
-        };
-        ui.horizontal_wrapped(|ui| {
-            for folder in ["Projects", "Exports", "Assets", "Plugins"] {
-                if ui.button(tr(folder)).clicked() {
-                    match workspace_bridge::prepare(&root, &app) {
-                        Ok(base) => reveal_project_path(&base.join(folder), false),
-                        Err(e) => self.plugins.message = e,
-                    }
-                }
-            }
-        });
-        if !plugins::supported(app.id) {
-            ui.add_space(16.0);
-            ui.label(tr("This app does not support plugin installation yet."));
-            return;
-        }
-        section(ui, "Install a plugin");
-        search(
-            ui,
-            "v2-plugin-source",
-            &mut self.plugins.link,
-            "GitHub repository or release URL",
-            ui.available_width().min(650.0),
-        );
-        ui.horizontal_wrapped(|ui| {
-            if ui
-                .add_enabled(
-                    !self.plugins.busy && !self.plugins.link.trim().is_empty(),
-                    egui::Button::new(tr("Install from GitHub")),
-                )
-                .clicked()
-            {
-                self.plugins
-                    .install(app, root.clone(), self.plugins.link.trim().into(), false);
-            }
-            if ui
-                .add_enabled(
-                    !self.plugins.busy,
-                    egui::Button::new(tr("Install from file")),
-                )
-                .clicked()
-            {
-                if let Some(file) = rfd::FileDialog::new()
-                    .add_filter("WebAssembly plugin", &["wasm", "zip"])
-                    .pick_file()
-                {
-                    self.plugins
-                        .install(app, root.clone(), file.display().to_string(), true);
-                }
-            }
-        });
-        ui.label(
-            RichText::new(tr("Compiled .wasm plugins and ZIP packages are supported."))
-                .small()
-                .color(muted()),
-        );
-        if !self.plugins.message.is_empty() {
-            ui.label(tr(&self.plugins.message));
-        }
-        section(ui, "Installed plugins");
-        match plugins::entries(&app) {
-            Ok(entries) => {
-                if entries.is_empty() {
-                    ui.label(tr("No installed plugins."));
-                }
-                for (index, entry) in entries.iter().enumerate() {
-                    ui.push_id(index, |ui| {
-                        ui.horizontal(|ui| {
-                            let mut enabled = entry.enabled;
-                            if ui
-                                .add_enabled(
-                                    !self.plugins.busy,
-                                    egui::Checkbox::new(&mut enabled, &entry.name),
-                                )
-                                .changed()
-                            {
-                                if let Err(error) = plugins::toggle(&app, index) {
-                                    self.plugins.message = error;
-                                }
-                            }
-                            if ui
-                                .add_enabled(!self.plugins.busy, egui::Button::new(tr("Remove")))
-                                .clicked()
-                            {
-                                self.plugins.remove = Some((app.id.into(), index));
-                            }
-                        });
-                        ui.separator();
-                    });
-                }
-            }
-            Err(error) => {
-                ui.label(error);
-            }
-        }
-        if let Some((id, index)) = self.plugins.remove.clone() {
-            if id == app.id {
-                let mut remove = false;
-                let mut cancel = false;
-                let modal =
-                    egui::Modal::new(egui::Id::new("v2-remove-plugin")).show(ui.ctx(), |ui| {
-                        ui.set_width(380.0);
-                        ui.heading(tr("Remove plugin?"));
-                        ui.label(tr(
-                            "Your projects and the original downloaded package will be kept.",
-                        ));
-                        ui.horizontal(|ui| {
-                            remove = ui.button(tr("Remove plugin")).clicked();
-                            cancel = ui.button(tr("Cancel")).clicked();
-                        });
-                    });
-                if remove {
-                    self.plugins.message = match plugins::uninstall(&app, index) {
-                        Ok(()) => tr("Plugin removed."),
-                        Err(e) => e,
-                    };
-                    self.plugins.remove = None;
-                } else if cancel || modal.should_close() {
-                    self.plugins.remove = None;
-                }
             }
         }
     }

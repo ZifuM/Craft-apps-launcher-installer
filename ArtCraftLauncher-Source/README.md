@@ -4,9 +4,9 @@ A native Windows, Linux and macOS home for Storytold’s open-source creative an
 
 > ArtCraft Master Suite is an independent community project. It is not affiliated with Adobe Inc. Adobe and other product names and marks belong to their respective owners.
 
-## Build 3.4 prerelease
+## Build 3.5 prerelease
 
-Version `3.4.0-beta.3` shares V2 light/dark mode, popup Settings, a dedicated Cloud screen, remembered window placement, project-folder moves and themed startup animations across all desktop targets. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+Version `3.5.0-beta.1` shares the Assets library, preset imports and app handoff, GitHub/local plugin installation, and centered search across Windows, Linux and macOS. It also includes V2 light/dark mode, popup Settings, a dedicated Cloud screen, remembered window placement, project-folder moves and themed startup animations. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
 
 Cloud is opened only by the top-right cloud icon. Google Drive uses browser sign-in and direct uploads. Local NAS backups use a share connected through the operating system. Both preserve app folders and nested Projects/Assets/Exports/Plugins paths, with saved versions and progress notifications. Dropbox and OneDrive are not available yet. See [Cloud setup](../docs/CLOUD_SETUP.md) for connection instructions and credential storage. All release packages are built from the same version tag on native Windows, Linux and macOS runners.
 
@@ -15,6 +15,8 @@ The historical `windows_ui`, `windows_releases`, `windows_suite_update` and `win
 ## Features
 
 - **Install and manage apps:** Find releases, install or update apps, open them, or uninstall them from one place.
+- **Keep reusable assets:** Import files or whole folders, store presets, preview and organize your library, and open supported assets in installed apps. See the [Assets guide](../docs/ASSETS.md).
+- **Manage plugins:** Install compiled packages from public GitHub links or local files, choose compatible releases, and enable/disable managed plugins. See the [plugin guide](../docs/PLUGINS.md).
 - **Browse projects together:** Scan folders you choose and filter projects by app. Switch between List, Grid, and Waterfall views.
 - **See project details:** View file type, size, modified date, location, and a canvas preview when the file contains preview data the launcher can read.
 - **Keep app folders organized:** Add a project folder and the launcher creates a subfolder for each app. The selected default folder is also used as the app’s working directory when launching, where supported.

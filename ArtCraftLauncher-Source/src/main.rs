@@ -27,6 +27,7 @@ mod onboarding;
 #[path = "windows_ui/cloud_ui.rs"]
 mod cloud_ui;
 mod plugins;
+mod assets;
 #[path = "windows_ui/plugin_ui.rs"]
 mod plugin_ui;
 mod workspace_bridge;
@@ -80,6 +81,7 @@ enum Page {
     Apps,
     YourApps,
     Projects,
+    Assets,
     Settings,
     App(&'static str),
 }
@@ -264,6 +266,8 @@ struct Preferences {
     text_scale: u8,
     project_sort: String,
     favorite_projects: Vec<PathBuf>,
+    asset_view: ProjectView,
+    favorite_assets: Vec<PathBuf>,
     installed: HashMap<String, String>,
     #[serde(skip)]
     scanning: bool,
@@ -282,7 +286,7 @@ impl Default for Preferences {
             cloud_project_view: ProjectView::List,
             workspace_project_view: ProjectView::Grid,
             text_scale: 0,
-            project_view: ProjectView::List, project_sort: "Recently modified".into(), favorite_projects: Vec::new(), installed: HashMap::new(), scanning: false,
+            project_view: ProjectView::List, project_sort: "Recently modified".into(), favorite_projects: Vec::new(), asset_view: ProjectView::Grid, favorite_assets: Vec::new(), installed: HashMap::new(), scanning: false,
         }
     }
 }
@@ -358,6 +362,7 @@ struct Launcher {
     v2_category: u8,
     folder_move: Option<project_move::Dialog>,
     plugins: plugins::Manager,
+    assets: assets::Manager,
     onboarding_step: usize,
     onboarding_error: Option<String>,
     cloud: cloud::Cloud,
@@ -499,6 +504,7 @@ impl Launcher {
             );
         }
         let mut launcher = Self {
+            assets: assets::Manager::default(),
             active_theme: prefs.ui_theme,
             v2_category: 0,
             #[cfg(target_os = "windows")]
@@ -776,6 +782,7 @@ impl Launcher {
     }
 
     fn scan_projects(&mut self) {
+        self.assets.refresh(self.asset_roots());
         if self.prefs.scanning {
             return;
         }
@@ -1267,6 +1274,7 @@ impl Launcher {
                     "Projects",
                     Some(self.projects.len()),
                 );
+                self.side_link(ui, Page::Assets, "Assets", Some(self.assets.library.items.len()));
                 if SHOW_YOUR_APPS {
                     self.side_link(ui, Page::YourApps, "Your apps", Some(self.states.values().filter(|s| s.installed.is_some()).count()));
                 }
@@ -2137,6 +2145,7 @@ impl eframe::App for Launcher {
                             Page::Apps => self.apps_page(ui),
                             Page::YourApps => self.your_apps_page(ui),
                             Page::Projects => self.projects_page(ui),
+                            Page::Assets => self.v2_assets(ui, None),
                             Page::Settings => { page_scroll(ui, "settings-scroll", |ui| { ui.set_width(ui.available_width().min(980.0)); self.settings_page(ui); }); },
                             Page::App(id) => {
                                 page_scroll(ui, ("app-workspace",id), |ui| self.app_detail(ui, id));
@@ -2150,9 +2159,29 @@ impl eframe::App for Launcher {
             });
         }
         self.plugins.tick();
+        if let Some(report) = self.assets.tick() {
+            for (old, new) in report.remaps {
+                if let Some(index) = self.prefs.favorite_assets.iter().position(|p| p == &old) {
+                    if let Some(new) = &new { self.prefs.favorite_assets[index] = new.clone(); }
+                    else { self.prefs.favorite_assets.remove(index); }
+                }
+                if let Some(index) = self.direct_cloud.settings.selected.iter().position(|p| p == &old) {
+                    if let Some(new) = &new { self.direct_cloud.settings.selected[index] = new.clone(); }
+                    else { self.direct_cloud.settings.selected.remove(index); }
+                }
+            }
+            save_preferences(&self.prefs);
+            self.direct_cloud.save();
+            self.assets.rescan_projects = true;
+        }
+        if self.assets.rescan_projects && !self.prefs.scanning && !self.assets.busy {
+            self.assets.rescan_projects = false;
+            self.scan_projects();
+        }
+        if self.assets.busy || self.assets.scanning() || self.assets.loading_preview() { ctx.request_repaint_after(Duration::from_millis(100)); }
         // Retain read-only status for existing folder backups; new sync uses the Drive API.
         self.cloud.monitor.tick(&self.cloud.settings);
-        let allow_automatic_sync = !self.prefs.scanning && !self.folder_move.as_ref().is_some_and(|operation| operation.running());
+        let allow_automatic_sync = !self.prefs.scanning && !self.assets.busy && !self.folder_move.as_ref().is_some_and(|operation| operation.running());
         if allow_automatic_sync && self.direct_cloud.settings.automatic && !self.direct_cloud.busy
             && self.last_project_scan.elapsed() >= Duration::from_secs(120) { self.scan_projects(); }
         let allow_automatic_sync = allow_automatic_sync && !self.prefs.scanning;
@@ -2254,7 +2283,7 @@ fn paint_navigation_icon(painter: &egui::Painter, rect: egui::Rect, page: Page, 
                 painter.rect_stroke(egui::Rect::from_center_size(c, Vec2::splat(s)), 1.0, stroke, egui::StrokeKind::Inside);
             }
         }
-        Page::Projects => {
+        Page::Projects | Page::Assets => {
             let left = rect.left() + 3.0;
             let right = rect.right() - 3.0;
             let top = rect.top() + 2.0;

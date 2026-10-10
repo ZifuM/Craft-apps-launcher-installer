@@ -2,7 +2,7 @@
 
 ## Available now
 
-Each app workspace has a Plugin management page. PhotoCraft, VectorCraft and EffectCraft can install compiled WebAssembly plugins from a local `.wasm` file, a ZIP containing built modules, a GitHub file/release asset URL, or a repository URL with one suitable latest-release asset. Ambiguous repositories require the exact asset link. GitHub source archives are not compiled automatically.
+Each app workspace has a Plugins page. See [Installing plugins](PLUGINS.md) for the current GitHub/local installer, supported formats and platform paths. PhotoCraft, VectorCraft and EffectCraft can install compiled WebAssembly plugins from a local `.wasm` file, a ZIP containing built modules, a GitHub file/release asset URL, or a repository URL with one suitable latest-release asset. Ambiguous repositories require the exact asset link. GitHub source archives are not compiled automatically.
 
 Master Suite checks module validity, rejects host imports, and checks the selected app's required export names. The app performs the final ABI/manifest/runtime checks when loading. Use an app release that supports the documented interface; successful copying is not proof that an older app build can load a newer plugin.
 
@@ -15,7 +15,8 @@ Installed extensions can be enabled, disabled and removed. Close the app first. 
 | PhotoCraft | `pc_*` WebAssembly filters | Additional Plug-ins Folder, enabled in `preferences.json`; portable settings are detected |
 | VectorCraft | `vc_*` WebAssembly object plugins | `engine_prefs.pluginsFolder` in `%APPDATA%/VectorCraft/ui.json` |
 | EffectCraft | `ec_*` WebAssembly effects | `Plug-ins` beside the app settings |
-| Other apps | Not enabled in this manager yet | A documented compatible adapter is required; native VST/CLAP/Photoshop extensions are not treated as WebAssembly modules |
+| SoundCraft | Native CLAP, VST3; Audio Units on macOS | Per-user OS audio plugin folders; see the [platform path table](PLUGINS.md#supported-loaders) |
+| Other apps | Not enabled in this manager yet | A documented compatible adapter is required; native plugins are not treated as WebAssembly modules |
 
 The project workspace keeps a plugin copy in its `Plugins` folder. If PhotoCraft/VectorCraft already use another plugin folder, it is preserved and the module is also deployed there. EffectCraft needs a copy in its native folder. Existing settings are backed up to `*.pre-master-suite.json` before changes. Restart the app to load newly installed modules.
 

@@ -1,10 +1,10 @@
-# Linux packages — Build 3.4 prerelease
+# Linux packages — Build 3.5 prerelease
 
 The latest Windows interface, update discovery, settings and core source are shared with Linux and macOS. Linux packaging is under `packaging/linux/`. The release workflow builds standalone AppImage and Flatpak downloads for GitHub Releases. Source is available through GitHub; the obsolete separate source-bundle script has been removed.
 
 ## Current status
 
-Build `v3.4.0-beta.3` uses the shared V2/Legacy themes, popup Settings, dedicated Cloud screen, window memory, project-folder moves and startup animations. Direct Google Drive sync and Local NAS backups preserve workspace subfolders. Native Ubuntu runners build x86_64 and ARM64 AppImage and Flatpak packages from the release tag; all four are included in the prerelease along with SHA-256 checksums. Native desktop behavior has not been manually validated for this build.
+Build `v3.5.0-beta.1` adds the Assets library, preset imports, app handoff, GitHub/local plugin installation and centered top search. It uses the shared V2/Legacy themes, popup Settings, dedicated Cloud screen, window memory, project-folder moves and startup animations. Direct Google Drive sync and Local NAS backups preserve workspace subfolders. Native Ubuntu runners build x86_64 and ARM64 AppImage and Flatpak packages from the release tag; all four are included in the prerelease along with SHA-256 checksums. Native desktop behavior has not been manually validated for this build.
 
 Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 
@@ -57,7 +57,7 @@ Standalone GitHub bundles no longer require a hosted Flatpak update repository f
 
 ## Flatpak permissions
 
-The user explicitly approved host integration. The manifest requests network, graphics, display/IPC, the status-notifier tray service, `org.freedesktop.Flatpak` host integration and the specific `~/.config/autostart` directory. It does **not** grant the whole home directory. Choose project and backup directories through the desktop file portal.
+The user explicitly approved host integration. The manifest requests network, graphics, display/IPC, the status-notifier tray service, `org.freedesktop.Flatpak` host integration and the specific `~/.config/autostart`, `~/.clap`, `~/.vst3` and `~/.ArtCraftDisabledPlugins` directories. It does **not** grant the whole home directory. Choose project and backup directories through the desktop file portal.
 
 Host integration permits commands outside the sandbox; it is used for launching managed Craft AppImages, provider clients, file-manager actions, process checks and Flatpak updates. Managed Craft apps inherit the suite's XDG configuration directories so plugin and export adapters agree with the apps. Such host-launched applications are not sandboxed by Master Suite. This is not a Flathub-reviewed package.
 
@@ -67,5 +67,7 @@ Host integration permits commands outside the sandbox; it is used for launching 
 - Startup uses a per-user desktop entry. Tray support requires a StatusNotifierItem host; if unavailable, the suite remains visible. Some desktops need a tray extension.
 - PDF first-page previews use `pdftoppm`; AppImage packaging bundles it. For Flatpak host previews, install the host's poppler-utils package. Existing embedded-image, PSD and content preview code is shared; Windows shell-only thumbnails still have no exact Linux equivalent.
 - Google Drive uploads work without a provider desktop client, and Local NAS backups use a mounted network share selected through the folder picker. Both preserve the app's Projects/Assets/Exports/Plugins folders. Sign-in uses the browser and stores credentials in a running Secret Service, such as GNOME Keyring. The Flatpak manifest permits `org.freedesktop.secrets`; use the folder picker to grant access to a NAS mount. Release builds include the configured Google Desktop OAuth settings, including inside Flatpak. Dropbox and OneDrive are not available yet; see [Cloud setup](CLOUD_SETUP.md).
-- Plugin/save/export integration remains experimental. Upstream limitations described in PLUGIN_MANAGEMENT.md still apply.
+- Assets use the selected `<project folder>/<App>/Assets` library, with presets in `Assets/Presets`. Imports use the native file/folder picker; Flatpak portal grants are needed for external locations. File-manager actions and app handoff use the Linux host integration.
+- PhotoCraft, VectorCraft and EffectCraft plugins use their Linux XDG preference paths. SoundCraft CLAP and VST3 packages use `~/.clap` and `~/.vst3`; package architecture and Unix executable permissions are retained. See [Plugins](PLUGINS.md).
+- Asset handoff and plugin/save/export integration remain experimental. The suite does not inject assets into existing documents or intercept saves. See [Assets](ASSETS.md) and [workspace integration](PLUGIN_MANAGEMENT.md).
 - The shared UI uses native Linux font candidates, with bundled egui fallbacks; CJK languages use installed Noto fonts where available.

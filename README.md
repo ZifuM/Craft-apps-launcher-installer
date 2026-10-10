@@ -1,12 +1,12 @@
 # ArtCraft Master Suite
 
-Your Craft apps, projects and backups in one desktop workspace.
+Your Craft apps, projects, assets, plugins and backups in one desktop workspace.
 
-**Build 3.4 beta 3 · `3.4.0-beta.3` · Windows, Linux and macOS**
+**Build 3.5 prerelease · `3.5.0-beta.1` · Windows, Linux and macOS**
 
-[Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases) · [Build 3.4 notes](RELEASE_NOTES_3.4.md) · [Build from source](ArtCraftLauncher-Source/README.md)
+[Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases) · [Build 3.5 notes](RELEASE_NOTES_3.5.md) · [Build from source](ArtCraftLauncher-Source/README.md)
 
-Build 3.4 beta 3 adds direct Google Drive sync, Local NAS backups, matching workspace folders and separate Cloud and Local NAS connection pages. Get the six platform packages from the [prerelease downloads](https://github.com/ZifuM/Craft-apps-launcher-installer/releases/tag/v3.4.0-beta.3). Prereleases are optional and do not replace the latest stable release.
+Build 3.5 prerelease adds an Assets library, preset storage and app handoff, redesigned plugin installation from GitHub or local files, and a centered search bar. These features share the same interface on Windows, Linux and macOS. Get the six platform packages from the [prerelease downloads](https://github.com/ZifuM/Craft-apps-launcher-installer/releases/tag/v3.5.0-beta.1). Prereleases are optional and do not replace the latest stable release.
 
 ## Install
 
@@ -42,6 +42,8 @@ On first launch, choose your language and project folder. Use **All Apps** to in
 - **App catalog:** install, update and launch 12 Craft apps.
 - **Projects:** search, filters, previews and List/Grid/Waterfall views; move folders from Projects or Settings.
 - **Workspaces:** shortcuts for installed apps and their project libraries.
+- **Assets:** a shared and per-app library for images, media, fonts, documents and presets, with file/folder imports, drag and drop, previews, search, favorites, Grid/List/Waterfall views and app handoff. See the [asset guide](docs/ASSETS.md).
+- **Plugins:** install compiled plugins from GitHub links or local files, with app-specific compatibility checks, managed enable/disable controls and installation folders. Supports PhotoCraft, VectorCraft, EffectCraft and SoundCraft; see the [plugin guide](docs/PLUGINS.md).
 - **Appearance:** V2 light and dark modes, with Legacy available after a restart.
 - **Desktop comfort:** remembered window placement, themed startup animations and optional subtle transitions.
 - **Cloud backups:** direct Google Drive uploads or backups to a connected Local NAS share, with matching app/project/asset folders, saved versions, progress and completion notifications. Access Cloud from the top-right icon. Dropbox and OneDrive are not available yet.
@@ -52,8 +54,8 @@ On first launch, choose your language and project folder. Use **All Apps** to in
 
 *Windows shown. The interface is shared across Windows, Linux and macOS.*
 
-Cloud and plugin integration are experimental. Existing local assets can be selected for backup; the separate workspace asset manager remains a placeholder. Google sign-in is subject to the configured Google project's testing/publishing status, and NAS shares must already be connected through the operating system. See [Cloud setup](docs/CLOUD_SETUP.md) for connection instructions. Keep Master Suite running until syncing finishes.
+Cloud, plugin loading and asset handoff are experimental. Import assets into each app’s library, keep presets and companion files together, and use **Use in app** to open supported formats or copy their path for the app’s Import/Place command. Assets can also be selected for backup. Google sign-in is subject to the configured Google project's testing/publishing status, and NAS shares must already be connected through the operating system. See [Cloud setup](docs/CLOUD_SETUP.md) for connection instructions. Keep Master Suite running until syncing finishes.
 
-[Linux details](docs/LINUX.md) · [macOS details](docs/MACOS.md) · [Cloud setup](docs/CLOUD_SETUP.md) · [License](ArtCraftLauncher-Source/LICENSE)
+[Assets guide](docs/ASSETS.md) · [Plugin guide](docs/PLUGINS.md) · [Linux details](docs/LINUX.md) · [macOS details](docs/MACOS.md) · [Cloud setup](docs/CLOUD_SETUP.md) · [License](ArtCraftLauncher-Source/LICENSE)
 
 Independent community launcher for Storytold's ArtCraft apps. App names and artwork belong to their respective owners.

@@ -16,7 +16,10 @@
     "--talk-name=org.kde.StatusNotifierWatcher",
     "--talk-name=org.freedesktop.secrets",
     "--talk-name=org.freedesktop.Flatpak",
-    "--filesystem=~/.config/autostart:create"
+    "--filesystem=~/.config/autostart:create",
+    "--filesystem=~/.clap:create",
+    "--filesystem=~/.vst3:create",
+    "--filesystem=~/.ArtCraftDisabledPlugins:create"
   ],
   "build-options": {
     "append-path": "/usr/lib/sdk/rust-stable/bin"

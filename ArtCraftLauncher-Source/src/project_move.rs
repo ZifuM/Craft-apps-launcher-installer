@@ -105,6 +105,9 @@ impl Launcher {
         for path in &mut self.prefs.favorite_projects {
             remap(path, record);
         }
+        for path in &mut self.prefs.favorite_assets {
+            remap(path, record);
+        }
         for path in &mut self.cloud.settings.selected {
             remap(path, record);
         }
@@ -192,7 +195,7 @@ impl Launcher {
             && !self.cloud.busy
             && !self.direct_cloud.busy
             && self.pending_launch.is_none()
-            && !self.suite_update_busy && !self.plugins.busy;
+            && !self.suite_update_busy && !self.plugins.busy && !self.assets.busy;
         let Some(dialog) = &mut self.folder_move else {
             return;
         };

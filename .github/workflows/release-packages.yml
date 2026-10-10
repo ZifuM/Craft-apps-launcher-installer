@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag to build (for example v3.4.0-beta.3)
+        description: Existing release tag to build (for example v3.5.0-beta.1)
         required: true
         type: string
       publish:
@@ -77,11 +77,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Path ../dist/windows -Force | Out-Null
           Copy-Item -LiteralPath target/release/artcraft-setup.exe -Destination ../dist/windows/Windows-x86_64.exe
+          Copy-Item -LiteralPath target/release/artcraft-launcher.exe -Destination ../dist/windows/ArtCraftMasterSuite.exe
       - uses: actions/upload-artifact@v4
         with:
           name: ArtCraftMasterSuite-Windows-x64
           if-no-files-found: error
-          path: dist/windows/Windows-x86_64.exe
+          path: |
+            dist/windows/Windows-x86_64.exe
+            dist/windows/ArtCraftMasterSuite.exe
 
   macos:
     needs: version

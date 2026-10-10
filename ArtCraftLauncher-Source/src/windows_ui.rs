@@ -313,6 +313,7 @@ impl Launcher {
                             "Pick up where you left off",
                             Some(self.projects.len()),
                         );
+                        self.modern_side_link(ui, Page::Assets, "Assets", "Images, media and presets", Some(self.assets.library.items.len()));
                         ui.add_space(18.0);
                         if !compact {
                             ui.label(

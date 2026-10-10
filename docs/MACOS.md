@@ -1,6 +1,6 @@
 # macOS beta
 
-Build 3.4 brings the current shared desktop interface and features to the universal macOS application:
+Build 3.5 brings the current shared desktop interface and features to the universal macOS application:
 
 `macOS-universal.dmg`
 
@@ -8,7 +8,7 @@ The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and 
 
 ## Build status
 
-Build `v3.4.0-beta.3` includes the updated Cloud screen, direct Google Drive sync, Local NAS backups and matching workspace folders. The release workflow compiles both Intel and Apple Silicon targets, combines them into one application, applies an ad-hoc signature and creates the universal DMG. Architecture, signature integrity and disk-image checks are part of packaging. Native desktop behavior has not been manually validated for this build.
+Build `v3.5.0-beta.1` includes the Assets library, presets and app handoff, redesigned GitHub/local plugin installation, centered top search, direct Google Drive sync and Local NAS backups. The release workflow compiles both Intel and Apple Silicon targets, combines them into one application, applies an ad-hoc signature and creates the universal DMG. Architecture, signature integrity and disk-image checks are part of packaging. Native desktop behavior has not been manually validated for this build.
 
 ## Install
 
@@ -27,7 +27,8 @@ The compact screens, menus, text-size settings and translation catalog are share
 - Native previews use Quick Look where a shared format preview is unavailable. Availability depends on the installed Quick Look providers.
 - The menu-bar icon supports opening and quitting Master Suite. Minimize-to-menu-bar and login startup remain off by default.
 - Login startup uses a per-user LaunchAgent. Enable it only after moving the suite out of its disk image and into its installed location.
-- Existing PhotoCraft, VectorCraft and EffectCraft plugin adapters use their upstream Mac Application Support folders. Plugin integration remains experimental.
+- Assets use `<project folder>/<App>/Assets`, with imported presets in `Assets/Presets`. Native file/folder dialogs, Finder reveal and file handoff are shared with the existing Mac app launcher. See [Assets](ASSETS.md).
+- PhotoCraft, VectorCraft and EffectCraft plugin adapters use their upstream Mac Application Support folders. SoundCraft supports per-user CLAP, VST3 and Audio Unit bundles in `~/Library/Audio/Plug-Ins`; package checks require a compatible Intel/Apple Silicon binary and preserve bundle layouts and executable permissions. See [Plugins](PLUGINS.md). Plugin loading and asset handoff remain experimental.
 - Google Drive uploads use browser sign-in and Keychain credential storage, and Local NAS backups use a share mounted in Finder. Both preserve the app's Projects/Assets/Exports/Plugins folders. The universal release build includes the configured Google Desktop OAuth settings for both CPU architectures. Dropbox and OneDrive are not available yet; see [Cloud setup](CLOUD_SETUP.md).
 
 ## Updates

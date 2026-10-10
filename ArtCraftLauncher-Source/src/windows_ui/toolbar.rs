@@ -259,7 +259,7 @@ fn banner_symbol(p: &egui::Painter, rect: egui::Rect, page: Page, color: Color32
                 false,
             );
         }
-        Page::Projects => {
+        Page::Projects | Page::Assets => {
             path(
                 &[
                     (0.24, 0.1),
