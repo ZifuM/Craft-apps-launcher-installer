@@ -131,6 +131,7 @@ enum Glyph {
     Desktop,
     Settings,
     Cloud,
+    Database,
     Home,
     Theme,
     Globe,
@@ -228,6 +229,20 @@ fn paint_glyph(painter: &egui::Painter, rect: egui::Rect, glyph: Glyph, color: C
             line(p(7.0, 5.0), p(5.0, 2.0));
             line(p(5.0, 2.0), p(1.0, 2.0));
             line(p(1.0, 2.0), p(1.0, 5.0));
+        }
+        Glyph::Database => {
+            let arc = |y: f32, start: f32, end: f32| {
+                let points = (0..=24).map(|i| {
+                    let angle = start + (end - start) * i as f32 / 24.0;
+                    p(8.0 + 6.0 * angle.cos(), y + 2.5 * angle.sin())
+                }).collect();
+                painter.add(egui::Shape::line(points, stroke));
+            };
+            arc(3.5, 0.0, std::f32::consts::TAU);
+            line(p(2.0, 3.5), p(2.0, 12.5));
+            line(p(14.0, 3.5), p(14.0, 12.5));
+            arc(8.0, 0.0, std::f32::consts::PI);
+            arc(12.5, 0.0, std::f32::consts::PI);
         }
         Glyph::Theme => {
             painter.circle_stroke(c, 6.0, stroke);

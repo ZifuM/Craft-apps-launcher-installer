@@ -1,6 +1,6 @@
 [package]
 name = "artcraft-launcher"
-version = "3.4.0-beta.2"
+version = "3.4.0-beta.3"
 edition = "2024"
 description = "A native desktop hub for the ArtCraft creative apps"
 license = "MIT"

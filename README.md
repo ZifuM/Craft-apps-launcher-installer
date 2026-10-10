@@ -2,11 +2,11 @@
 
 Your Craft apps, projects and backups in one desktop workspace.
 
-**Build 3.4 beta 2 · `3.4.0-beta.2` · Windows, Linux and macOS**
+**Build 3.4 beta 3 · `3.4.0-beta.3` · Windows, Linux and macOS**
 
 [Releases](https://github.com/ZifuM/Craft-apps-launcher-installer/releases) · [Build 3.4 notes](RELEASE_NOTES_3.4.md) · [Build from source](ArtCraftLauncher-Source/README.md)
 
-Build 3.4 beta 2 adds direct Google Drive sync, Local NAS backups, matching workspace folders and an updated Cloud interface. Get the six platform packages from the [prerelease downloads](https://github.com/ZifuM/Craft-apps-launcher-installer/releases/tag/v3.4.0-beta.2). Prereleases are optional and do not replace the latest stable release.
+Build 3.4 beta 3 adds direct Google Drive sync, Local NAS backups, matching workspace folders and separate Cloud and Local NAS connection pages. Get the six platform packages from the [prerelease downloads](https://github.com/ZifuM/Craft-apps-launcher-installer/releases/tag/v3.4.0-beta.3). Prereleases are optional and do not replace the latest stable release.
 
 ## Install
 

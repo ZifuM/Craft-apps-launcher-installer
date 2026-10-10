@@ -2,10 +2,10 @@
 
 ## Build 3.4 prerelease
 
-Package version: `3.4.0-beta.2`. Release tag: `v3.4.0-beta.2`.
+Package version: `3.4.0-beta.3`. Release tag: `v3.4.0-beta.3`.
 
 1. Commit and push the intended source, assets, packaging and workflows when publication is authorized. Configure the repository Actions secret `ARTCRAFT_GOOGLE_DESKTOP_CLIENT_SECRET` from the matching Google Desktop OAuth registration. Do not commit the downloaded JSON.
-2. Create a **draft prerelease** for `v3.4.0-beta.2`, targeting that commit. Use `RELEASE_NOTES_3.4.md` for its notes.
+2. Create a **draft prerelease** for `v3.4.0-beta.3`, targeting that commit. Use `RELEASE_NOTES_3.4.md` for its notes.
 3. Run **Actions → Release downloads → Run workflow**, choosing the updated default branch and that tag. Enable **publish** for this requested public prerelease. Leave it disabled only when preparing a review draft.
 4. Wait for all native jobs to succeed. The workflow builds Windows x64, Linux x86_64/ARM64 AppImage and Flatpak packages, and the universal macOS DMG from the tag.
 5. With **publish** enabled, the workflow publishes the draft only after all six packages and checksums are uploaded. Otherwise, the release stays a draft.

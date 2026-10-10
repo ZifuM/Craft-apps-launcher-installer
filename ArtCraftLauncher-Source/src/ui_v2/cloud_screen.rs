@@ -10,15 +10,11 @@ impl Launcher {
                     (0, "Your files", Glyph::Folder),
                     (4, "Selected files", Glyph::Document),
                     (1, "Saved versions", Glyph::Refresh),
-                    (3, "Connections", Glyph::Cloud),
                 ] {
                     let response =
                         sidebar_item(ui, label, self.direct_cloud.tab == id, glyph, false, None);
                     if response.clicked() {
                         self.direct_cloud.tab = id;
-                        if id == 3 {
-                            self.direct_cloud.check_on_open();
-                        }
                         if id == 1 && !self.direct_cloud.busy {
                             self.direct_cloud.refresh();
                         }
@@ -26,26 +22,26 @@ impl Launcher {
                 }
                 sidebar_divider(ui);
                 sidebar_caption(ui, "STORAGE", false);
-                for target in [
-                    cloud_direct::BackupTarget::Google,
-                    cloud_direct::BackupTarget::Nas,
+                for (tab, label, glyph) in [
+                    (3, "Cloud", Glyph::Cloud),
+                    (5, "Local NAS", Glyph::Database),
                 ] {
                     if sidebar_item(
                         ui,
-                        target.label(),
-                        self.direct_cloud.tab == 3 && self.direct_cloud.settings.target == target,
-                        Glyph::Cloud,
+                        label,
+                        self.direct_cloud.tab == tab,
+                        glyph,
                         false,
                         None,
                     )
                     .clicked()
                     {
-                        self.direct_cloud.select_target(target);
-                        self.direct_cloud.tab = 3;
+                        self.direct_cloud.tab = tab;
                         self.direct_cloud.check_on_open();
                     }
                 }
                 ui.add_space(12.0);
+                ui.label(RichText::new(tr(format!("Backup destination: {}", self.direct_cloud.target_label()))).small().color(muted()));
                 ui.label(
                     RichText::new(tr(
                         if self.direct_cloud.settings.target == cloud_direct::BackupTarget::Nas {
@@ -87,12 +83,13 @@ impl Launcher {
                 ui.set_width(ui.available_width());
                 let ease = transition_progress(ui.ctx(), egui::Id::new("cloud-section-transition"), egui::Id::new(self.direct_cloud.tab), self.prefs.reduce_motion);
                 ui.multiply_opacity(0.35 + ease * 0.65);
-                let title = match self.direct_cloud.tab { 1 => "Saved versions", 3 => "Connections", 4 => "Selected files", _ => "Your files" };
+                let title = match self.direct_cloud.tab { 1 => "Saved versions", 3 => "Cloud connections", 4 => "Selected files", 5 => "Local NAS", _ => "Your files" };
                 ui.heading(tr(title));
                 ui.add_space(8.0);
                 ui.label(RichText::new(tr(match self.direct_cloud.tab {
                     1 => "Saved versions on your selected backup destination. Restore any version as a separate file.",
-                    3 => "Choose Google Drive or a local NAS folder for your backups.",
+                    3 => "Connect a cloud storage service for your backups.",
+                    5 => "Connect a NAS share or network folder for your backups.",
                     _ => "Select projects, assets and workspace files to back up in their original app folders.",
                 })).color(muted()));
                 ui.add_space(22.0);
@@ -109,7 +106,17 @@ impl Launcher {
                     ui.add_space(16.0);
                 }
                 match self.direct_cloud.tab {
-                    1 => self.cloud_versions(ui), 3 => self.cloud_connections(ui), _ => self.cloud_files(ui),
+                    1 => self.cloud_versions(ui),
+                    3 => {
+                        self.cloud_connections(ui);
+                        self.backup_options(ui, cloud_direct::BackupTarget::Google);
+                    },
+                    5 => {
+                        self.nas_connection_card(ui);
+                        ui.add_space(16.0);
+                        self.backup_options(ui, cloud_direct::BackupTarget::Nas);
+                    },
+                    _ => self.cloud_files(ui),
                 }
             });
 
@@ -237,8 +244,11 @@ impl Launcher {
                 });
             ui.add_space(16.0);
         }
-        self.nas_connection_card(ui);
-        ui.add_space(16.0);
+    }
+    fn backup_options(&mut self, ui: &mut egui::Ui, target: cloud_direct::BackupTarget) {
+        if self.direct_cloud.settings.target != target {
+            return;
+        }
         egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(20).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(RichText::new(tr(format!("Backup destination: {}", self.direct_cloud.target_label()))).strong());
@@ -256,6 +266,9 @@ impl Launcher {
         egui::Frame::new().fill(panel()).stroke(egui::Stroke::new(1.0_f32, border())).corner_radius(UI_RADIUS).inner_margin(20).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
+                paint_glyph(ui.painter(), rect, Glyph::Database, muted());
+                ui.add_space(10.0);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(tr("Local NAS")).strong());
                     ui.label(RichText::new(tr(self.direct_cloud.nas_connection.label())).color(muted()));

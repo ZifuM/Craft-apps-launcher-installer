@@ -4,7 +4,7 @@ The latest Windows interface, update discovery, settings and core source are sha
 
 ## Current status
 
-Build `v3.4.0-beta.2` uses the shared V2/Legacy themes, popup Settings, dedicated Cloud screen, window memory, project-folder moves and startup animations. Direct Google Drive sync and Local NAS backups preserve workspace subfolders. Native Ubuntu runners build x86_64 and ARM64 AppImage and Flatpak packages from the release tag; all four are included in the prerelease along with SHA-256 checksums. Native desktop behavior has not been manually validated for this build.
+Build `v3.4.0-beta.3` uses the shared V2/Legacy themes, popup Settings, dedicated Cloud screen, window memory, project-folder moves and startup animations. Direct Google Drive sync and Local NAS backups preserve workspace subfolders. Native Ubuntu runners build x86_64 and ARM64 AppImage and Flatpak packages from the release tag; all four are included in the prerelease along with SHA-256 checksums. Native desktop behavior has not been manually validated for this build.
 
 Desktop installation, updates, portals, tray support and Wayland/X11 behavior require hands-on Linux validation. A successful build alone does not establish compatibility.
 

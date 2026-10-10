@@ -8,7 +8,7 @@ The build targets macOS 12 or later on Intel and Apple Silicon. Compilation and 
 
 ## Build status
 
-Build `v3.4.0-beta.2` includes the updated Cloud screen, direct Google Drive sync, Local NAS backups and matching workspace folders. The release workflow compiles both Intel and Apple Silicon targets, combines them into one application, applies an ad-hoc signature and creates the universal DMG. Architecture, signature integrity and disk-image checks are part of packaging. Native desktop behavior has not been manually validated for this build.
+Build `v3.4.0-beta.3` includes the updated Cloud screen, direct Google Drive sync, Local NAS backups and matching workspace folders. The release workflow compiles both Intel and Apple Silicon targets, combines them into one application, applies an ad-hoc signature and creates the universal DMG. Architecture, signature integrity and disk-image checks are part of packaging. Native desktop behavior has not been manually validated for this build.
 
 ## Install
 

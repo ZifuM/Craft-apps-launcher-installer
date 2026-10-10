@@ -1,11 +1,11 @@
 # Direct cloud sync
 
-Build **3.4 beta 2** backs up to **Google Drive** or a **Local NAS** share connected through your operating system. Google Drive for desktop is not required. **Dropbox and OneDrive are not available yet.** These features are included in the Windows, Linux and macOS packages for `v3.4.0-beta.2`.
+Build **3.4 beta 3** backs up to **Google Drive** or a **Local NAS** share connected through your operating system. Google Drive for desktop is not required. **Dropbox and OneDrive are not available yet.** These features are included in the Windows, Linux and macOS packages for `v3.4.0-beta.3`.
 
 ## Connect and sync
 
 1. Click the **cloud icon at the top right** of Master Suite. This is the only entry to the Cloud screen.
-2. Open **Connections**, then **Google Drive → Connect**.
+2. Under **Storage**, open **Cloud**, then **Google Drive → Connect**. This page also lists Dropbox and OneDrive as not available yet.
 3. Complete Google sign-in and consent in your browser, then return to Master Suite.
 4. Open **Your files** and select the projects, assets, exports or plugins to upload. Use the app and file-kind filters to narrow the list; **Refresh files** discovers local changes.
 5. Click **Sync** in the bottom bar. Keep Master Suite running until the bottom-right notification says **Sync complete**. The notification counts down five seconds and closes.
@@ -46,7 +46,7 @@ The progress bar advances as Google acknowledges each uploaded chunk. Completion
 ## Local NAS backups
 
 1. Connect the NAS share in your operating system's file manager first (a Windows network folder/mapped drive, or a mounted share on macOS/Linux). Use the operating system to sign in to the share.
-2. Open the top-right **Cloud → Connections → Local NAS → Connect NAS** and choose a writable folder on that share.
+2. Open the top-right **cloud icon → Storage → Local NAS → Connect NAS** and choose a writable folder on that share.
 3. Master Suite checks that the folder can be written and read, then creates its **ArtCraft Master Suite** backup folder. A successful connection selects **Local NAS** as the destination. No Google account is required.
 4. Select files in **Your files** and click **Sync**. The bottom bar identifies the destination; the bottom-right notification reports copying, verification, completion and its five-second dismissal countdown.
 5. Use **Saved versions** to restore a separate copy. Use **Check connection**, **Change folder**, or **Disconnect** in the NAS card to manage the share.
@@ -55,7 +55,7 @@ NAS backups keep the latest files at their normal app paths and retain older cop
 
 An identity marker prevents a missing network mount from silently being replaced by a new local backup directory. If the share is offline, read-only, full, or unavailable, the app reports an error. NAS credentials remain with the operating system. Disconnecting keeps the backup files. Only one Master Suite instance can write to a NAS backup folder at a time; after a crash, remove a leftover `.artcraft-sync.lock` only after closing all instances using that folder.
 
-Google Drive and NAS have separate backup receipts and histories. Choose **Use Google Drive for backups** or **Use Local NAS for backups** in Connections. Changing destinations turns automatic syncing off; enable it again for the chosen destination if wanted. Automatic backups refresh local files every two minutes while Master Suite is running, even when automatic project scanning is disabled. NAS shares must stay mounted and writable.
+Google Drive and NAS have separate backup receipts and histories. Choose **Use Google Drive for backups** or **Use Local NAS for backups** on the corresponding **Storage → Cloud** or **Storage → Local NAS** page. Opening a storage page only changes the view. Changing destinations turns automatic syncing off; enable it again for the chosen destination if wanted. Automatic backups refresh local files every two minutes while Master Suite is running, even when automatic project scanning is disabled. NAS shares must stay mounted and writable.
 
 ## Google project configuration
 

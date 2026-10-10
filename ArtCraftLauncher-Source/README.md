@@ -6,7 +6,7 @@ A native Windows, Linux and macOS home for Storytold’s open-source creative an
 
 ## Build 3.4 prerelease
 
-Version `3.4.0-beta.2` shares V2 light/dark mode, popup Settings, a dedicated Cloud screen, remembered window placement, project-folder moves and themed startup animations across all desktop targets. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
+Version `3.4.0-beta.3` shares V2 light/dark mode, popup Settings, a dedicated Cloud screen, remembered window placement, project-folder moves and themed startup animations across all desktop targets. Legacy remains selectable; UI theme changes require a restart. See [Linux packages](../docs/LINUX.md), [macOS packages](../docs/MACOS.md) and [release instructions](../docs/RELEASING.md).
 
 Cloud is opened only by the top-right cloud icon. Google Drive uses browser sign-in and direct uploads. Local NAS backups use a share connected through the operating system. Both preserve app folders and nested Projects/Assets/Exports/Plugins paths, with saved versions and progress notifications. Dropbox and OneDrive are not available yet. See [Cloud setup](../docs/CLOUD_SETUP.md) for connection instructions and credential storage. All release packages are built from the same version tag on native Windows, Linux and macOS runners.
 

@@ -1,13 +1,17 @@
-# Build 3.4 beta 2 — Prerelease
+# Build 3.4 beta 3 — Prerelease
 
-Version: `3.4.0-beta.2` · Tag: `v3.4.0-beta.2`
+Version: `3.4.0-beta.3` · Tag: `v3.4.0-beta.3`
 
-## Updated in beta 2
+## Updated in beta 3
+
+- **Separate storage pages:** the Storage sidebar now contains **Cloud** for Google Drive, Dropbox and OneDrive, and **Local NAS** for NAS connections only. Local NAS uses a database icon. Opening either page does not change the active backup destination; choose its backup option explicitly.
+
+## Cloud and NAS update
 
 - **Direct Google Drive sync:** connect through your browser and upload without Google Drive for desktop. Connected status is shown only after live Drive access is confirmed; failures display an error and disable syncing until the connection is restored.
 - **Local NAS backups:** connect a network share already mounted through the operating system, choose it instead of Google Drive, and back up selected files with copy verification and saved versions. Google Drive and NAS keep separate histories.
 - **Matching workspace folders:** files retain their app and Projects/Assets/Exports/Plugins folders, including nested directories. For example, `PhotoCraft/Projects/Client job/document.psd` and `PhotoCraft/Assets/Textures/paper.png`. The Cloud picker shows destinations and includes app and file-kind filters.
-- **A dedicated Cloud screen:** opened from the top-right cloud icon, with its own sidebar, Your files, Selected files, Saved versions and Connections. It replaces the previous Cloud tab in Settings.
+- **A dedicated Cloud screen:** opened from the top-right cloud icon, with its own sidebar, Your files, Selected files, Saved versions, Cloud and Local NAS. It replaces the previous Cloud tab in Settings.
 - **A revised sync bar:** a flat theme-colored footer, thin divider, standard buttons and the selected backup destination. Sync notifications show progress, completion and a five-second dismissal countdown.
 - **Window and navigation polish:** a taller Settings popup, removal of the sidebar Settings entry, vertically centered overflow buttons, and a Windows title bar that matches the selected light/dark toolbar color.
 - **Native packages updated together:** Windows x64 installer, universal macOS DMG and Linux x86_64/ARM64 AppImage and Flatpak packages share the new cloud and NAS features. Google Desktop OAuth build configuration is included in each package; refresh tokens stay in the OS credential store.
@@ -35,7 +39,7 @@ Dropbox and OneDrive are **not available yet**. Google access remains subject to
 | Linux x86_64 | `Linux-x86_64.AppImage`, `Linux-x86_64.flatpak` |
 | Linux ARM64 | `Linux-aarch64.AppImage`, `Linux-aarch64.flatpak` |
 
-`SHA256SUMS.txt` accompanies all six packages. See the [installation guide](https://github.com/ZifuM/Craft-apps-launcher-installer/blob/v3.4.0-beta.2/README.md#install) and [Cloud/NAS setup](https://github.com/ZifuM/Craft-apps-launcher-installer/blob/v3.4.0-beta.2/docs/CLOUD_SETUP.md).
+`SHA256SUMS.txt` accompanies all six packages. See the [installation guide](https://github.com/ZifuM/Craft-apps-launcher-installer/blob/v3.4.0-beta.3/README.md#install) and [Cloud/NAS setup](https://github.com/ZifuM/Craft-apps-launcher-installer/blob/v3.4.0-beta.3/docs/CLOUD_SETUP.md).
 
 ## Build and release status
 
